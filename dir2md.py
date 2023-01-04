@@ -1,4 +1,9 @@
+import os
+
+
 def dir2md(*files: str) -> str:
+    # Ignore directories
+    files = filter(os.path.isfile, files)
     # Iterate over the list of files
     for file in files:
         # Yield the relative path to the file as a comment

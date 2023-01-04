@@ -1,49 +1,48 @@
-# Code to Markdown Converter
+# dir2md
 
-This script converts code files to Markdown code blocks. It searches for files in a specified directory that match a specified pattern, and converts each matching file to a Markdown code block.
+`dir2md` is a command line utility for creating a markdown file that includes code blocks for all specified files.
+
+## Installation
+
+Install dir2md using pip:
+
+```bash
+pip install dir2md
+```
 
 ## Usage
 
-To use the script, run the following command:
+To use `dir2md`, pass a list of file paths as arguments:
 
 ```bash
-python code_to_markdown.py --directory <directory> --pattern <pattern>
+dir2md file1.py file2.py
 ```
 
+This will output a markdown file with code blocks for `file1.py` and `file2.py`.
 
-`directory` is a required argument that specifies the directory to search for files. `pattern` is an optional argument that specifies a pattern to match against the names of files in the specified directory. If `pattern` is not specified, the script will search for all files in the directory.
+### Wildcard support
 
-The script will print the resulting Markdown code blocks to the console.
+You can use wildcards (`*`) to pass multiple files at once.
 
-## Examples
-
-To search for all Python files in the current directory and convert them to Markdown code blocks:
+For example, to include all Python files in the current directory:
 
 ```bash
-python code_to_markdown.py --pattern "*.py"
+dir2md *.py
 ```
 
-
-To search for all files in a subdirectory called "code" and convert them to Markdown code blocks:
+To do so recursively, use `**`:
 
 ```bash
-python code_to_markdown.py --directory code
+dir2md **/*.py
 ```
 
-To search for all files in the current directory that have the word "example" in their name and convert them to Markdown code blocks:
+Note that the wildcard statement only works if it is expanded by the shell before the command is run. This means that you must use it in the command line or in a shell script, and it will not work if you pass it as a string to a function that runs the command.
+
+
+## Options
+
+Use the `--help` flag to view the available options:
 
 ```bash
-python code_to_markdown.py --pattern "example"
+dir2md --help
 ```
-
-## Requirements
-
-- Python 3.6 or higher
-- The `glob` and `pathlib` modules, which are part of the Python standard library.
-- The `fire` module, which can be installed using `pip install fire`.
-
-## Notes
-
-- The resulting Markdown code blocks will include a comment at the top containing the relative path to the file within the specified directory.
-- The script will recursively search the specified directory for matching files.
-- The script does not modify the original files in any way. It only generates new Markdown code blocks based on the contents of the original files.

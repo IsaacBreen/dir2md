@@ -1,5 +1,8 @@
-import os, re, pathlib
+import os
+import pathlib
+import re
 from typing import NamedTuple, Generator
+
 import fire
 
 
@@ -12,9 +15,14 @@ def dir2md(*files: str) -> str:
         yield f"<!-- {file} -->"
         # Yield the code block
         with open(file, "r") as code_file:
-            yield "```"
-            yield from code_file
-            yield "```"
+            code = code_file.read()
+            # Decide how many ticks to use
+            ticks = "```"
+            while re.search(rf"\n\s*{ticks}", code):
+                ticks += "`"
+            yield ticks
+            yield from code.splitlines()
+            yield ticks
 
 
 class TextFile(NamedTuple):
@@ -33,7 +41,7 @@ def md2dir(text: str) -> Generator[TextFile, None, None]:
             # Extract the path from the comment
             path = line[5:-4]
             # Get the number of ticks in the code fence opening
-            ticks = re.match("`*", next(iter_lines)).group()
+            ticks = re.match(r"(`+)", next(iter_lines)).group(1)
             # Get lines up until the closing code fence
             code = []
             for line in iter_lines:
@@ -46,7 +54,7 @@ def md2dir(text: str) -> Generator[TextFile, None, None]:
 
 def md2dir_save(text: str, output_dir: str, yes: bool = False) -> None:
     files = list(md2dir(text))
-    if not yes:
+    if files and not yes:
         filenames = [file.path for file in files]
         new_directories = []
         for filename in filenames:

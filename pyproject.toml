@@ -1,14 +1,15 @@
 [tool.poetry]
-name = "x2md"
+name = "dir2md"
 version = "0.2.2"
 description = ""
 authors = ["IsaacBreen <mail@isaacbreen.com>"]
-readme = "README.md"
 license = "MIT"
+readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-fire = "^0.4.0"
+fire = "^0.5.0"
+
 
 [build-system]
 requires = ["poetry-core"]

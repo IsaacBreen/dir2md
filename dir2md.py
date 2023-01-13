@@ -6,7 +6,7 @@ from typing import NamedTuple, Generator
 import fire
 
 
-def dir2md(*files: str) -> str:
+def dir2md(*files: str) -> Generator[str, None, None]:
     # Ignore directories
     files = filter(os.path.isfile, files)
     # Iterate over the list of files

@@ -52,8 +52,7 @@ def md2dir(text: str) -> Generator[TextFile, None, None]:
             yield TextFile("\n".join(code), path)
 
 
-def md2dir_save(text: str, output_dir: str, yes: bool = False) -> None:
-    files = list(md2dir(text))
+def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
     if files and not yes:
         filenames = [file.path for file in files]
         new_directories = []
@@ -85,6 +84,10 @@ def md2dir_save(text: str, output_dir: str, yes: bool = False) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             f.write(file.text)
+
+
+def md2dir_save(text: str, output_dir: str, yes: bool = False) -> None:
+    save_dir(files=list(md2dir(text)), output_dir=output_dir, yes=yes)
 
 
 def dir2md_cli() -> None:

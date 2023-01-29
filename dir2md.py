@@ -28,6 +28,7 @@ def dir2md(*files: str) -> Generator[str, None, None]:
 class TextFile(NamedTuple):
     text: str
     path: str
+    partial: bool
 
 
 def md2dir(text: str) -> Generator[TextFile, None, None]:
@@ -48,8 +49,12 @@ def md2dir(text: str) -> Generator[TextFile, None, None]:
                 if line.startswith(ticks):
                     break
                 code.append(line)
+            else:
+                # If the code fence was never closed, yield the partial file
+                yield TextFile("\n".join(code), path, partial=True)
+                return
             # Yield the file
-            yield TextFile("\n".join(code), path)
+            yield TextFile("\n".join(code), path, partial=False)
 
 
 def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:

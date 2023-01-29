@@ -42,7 +42,7 @@ def md2dir(text: str) -> Generator[TextFile, None, None]:
             # Extract the path from the comment
             path = line[5:-4]
             # Get the number of ticks in the code fence opening
-            ticks = re.match(r"(`+)", next(iter_lines)).group(1)
+            ticks = re.match(r"(`+)", next(iter_lines, "")).group(1)
             # Get lines up until the closing code fence
             code = []
             for line in iter_lines:

@@ -1,7 +1,8 @@
 import os
 import pathlib
 import re
-from typing import NamedTuple, Generator
+from typing import Generator
+from typing import NamedTuple
 
 import fire
 
@@ -42,8 +43,11 @@ def md2dir(text: str) -> Generator[TextFile, None, None]:
             # Extract the path from the comment
             path = line[5:-4]
             # Get the number of ticks in the code fence opening
-            ticks = re.match(r"(`+)", next(iter_lines, "")).group(1)
-            # Get lines up until the closing code fence
+            ticks_match = re.match(r"(`+)", next(iter_lines, ""))
+            if ticks_match is None:
+                raise ValueError(f"Expected code fence opening after {path!r}")
+            ticks = ticks_match.group(1)
+            # Get lines up to the closing code fence
             code = []
             for line in iter_lines:
                 if line.startswith(ticks):

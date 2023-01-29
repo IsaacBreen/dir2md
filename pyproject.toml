@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "dir2md"
-version = "0.2.4"
+version = "0.2.5"
 description = ""
 authors = ["IsaacBreen <mail@isaacbreen.com>"]
 license = "MIT"

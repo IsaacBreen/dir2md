@@ -45,7 +45,7 @@ def md2dir(text: str) -> Generator[TextFile, None, None]:
             # Get the number of ticks in the code fence opening
             ticks_match = re.match(r"(`+)", next(iter_lines, ""))
             if ticks_match is None:
-                raise ValueError(f"Expected code fence opening after {path!r}")
+                raise ValueError(f"Expected code fence opening after {path!r}.\ntext=\"\"\"\n{text}\n\"\"\"")
             ticks = ticks_match.group(1)
             # Get lines up to the closing code fence
             code = []

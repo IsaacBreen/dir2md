@@ -1,29 +1,12 @@
+from __future__ import annotations
+
 import os
 import pathlib
 import re
-from typing import Generator
+from typing import Generator, Callable
 from typing import NamedTuple
 
 import fire
-
-
-def dir2md(*files: str) -> Generator[str, None, None]:
-    # Ignore directories
-    files = filter(os.path.isfile, files)
-    # Iterate over the list of files
-    for file in files:
-        # Yield the relative path to the file as a comment
-        yield f"<!-- {file} -->"
-        # Yield the code block
-        with open(file, "r") as code_file:
-            code = code_file.read()
-            # Decide how many ticks to use
-            ticks = "```"
-            while re.search(rf"\n\s*{ticks}", code):
-                ticks += "`"
-            yield ticks
-            yield from code.splitlines()
-            yield ticks
 
 
 class TextFile(NamedTuple):
@@ -32,7 +15,22 @@ class TextFile(NamedTuple):
     partial: bool
 
 
-def md2dir(text: str) -> Generator[TextFile, None, None]:
+def default_formatter(text_file: TextFile) -> str:
+    r = ""
+    # Yield the relative path to the file as a comment
+    r += f"{text_file.path}"
+    # Yield the code block
+    # Decide how many ticks to use
+    ticks = "```"
+    while re.search(rf"\n\s*{ticks}", text_file.text):
+        ticks += "`"
+    r += ticks
+    r += text_file.text
+    r += ticks
+    return r
+
+
+def default_parser(text: str) -> Generator[TextFile, None, None]:
     # Split the text into lines
     lines = text.splitlines()
     # Iterate over the lines
@@ -60,6 +58,19 @@ def md2dir(text: str) -> Generator[TextFile, None, None]:
             # Yield the file
             yield TextFile("\n".join(code), path, partial=False)
 
+
+def dir2md(*files: str, formatter: str | Callable[[TextFile], str] = default_formatter) -> Generator[str, None, None]:
+    # Ignore directories
+    files = filter(os.path.isfile, files)
+    # Iterate over the list of files
+    for file in files:
+        with open(file, "r") as code_file:
+            code = code_file.read()
+        yield from formatter(TextFile(text=code, path=file, partial=False)).splitlines()
+
+
+def md2dir(text: str, *, parser: Callable[[str], Generator[TextFile, None, None]] = default_parser()) -> Generator[TextFile, None, None]:
+    yield from parser(text)
 
 def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
     if files and not yes:

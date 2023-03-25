@@ -22,15 +22,15 @@ class TextFile(NamedTuple):
 def default_formatter(text_file: TextFile) -> str:
     r = ""
     # Yield the relative path to the file as a comment
-    r += f"{text_file.path}"
+    r += f"{text_file.path}\n"
     # Yield the code block
     # Decide how many ticks to use
     ticks = "```"
     while re.search(rf"\n\s*{ticks}", text_file.text):
         ticks += "`"
-    r += ticks
-    r += text_file.text
-    r += ticks
+    r += ticks + "\n"
+    r += text_file.text + "\n"
+    r += ticks + "\n\n"
     return r
 
 

@@ -93,6 +93,11 @@ close_code_token = some(lambda t: t.type == "CLOSE_CODE_BLOCK").named(
 
 def to_text_file(tokens: tuple[Token, Token, Token, Token]) -> TextFile:
     path, open_code, text, close_code = tokens
+
+    # Trim extraneous ":" from end of path
+    if path.value.endswith(":"):
+        path.value = path.value[:-1]
+    
     return TextFile(text=text.value, path=path.value, partial=False)
 
 

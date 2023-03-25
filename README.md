@@ -64,3 +64,4 @@ dir2md **/*.py
 
 Note that the wildcard statement only works if it is expanded by the shell before the command is run. This means that you must use it in the command line or in a shell script, and it will not work if you pass it as a string to a function that runs the command.
 
+

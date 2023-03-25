@@ -3,14 +3,14 @@ from __future__ import annotations
 import os
 import pathlib
 import re
-from typing import Callable
-from typing import Generator, List
+from typing import Callable, Iterable
+from typing import Generator
+from typing import List
 from typing import NamedTuple
 
 import fire
-from funcparserlib.lexer import make_tokenizer, TokenSpec, Token
-from funcparserlib.parser import many
-from funcparserlib.parser import some, skip, finished
+from funcparserlib.lexer import Token
+from funcparserlib.parser import some, finished, maybe, many
 
 
 class TextFile(NamedTuple):
@@ -33,43 +33,45 @@ def default_formatter(text_file: TextFile) -> str:
     r += ticks
     return r
 
-import re
-from typing import List
-from dataclasses import dataclass
 
-from funcparserlib.parser import some, Parser, finished, maybe
-
-@dataclass
-class TextFile:
-    path: str
-    text: str
-    
 def custom_tokenize(s: str) -> List[Token]:
     tokens = []
     in_code_block = False
     open_ticks = None
     while s:
         if not in_code_block:
-            open_code_match = re.search(r"(\n^\s*(.+)\s*\n\s*(```+)\s*(\w*)\s*(\n|$)", s, flags=re.MULTILINE)
+            open_code_match = re.search(
+                r"^[^\n\S]*(\S+)[^\n\S]*\n[^\n\S]*(```+)[^\n\S]*(\w*)[^\n\S]*$",
+                s,
+                flags=re.MULTILINE,
+            )
             if open_code_match:
-                text = s[:open_code_match.start()]
-                path = open_code_match.group(1).strip()
-                open_ticks = open_code_match.group(2).strip()
-                print(text)
-                format_specifier = open_code_match.group(3).strip()
-                tokens.append(Token("text", text))
-                tokens.append(Token("path", path))
-                tokens.append(Token("OPEN_CODE_BLOCK", open_ticks))
-                s = s[open_code_match.end():]
+                text = s[: open_code_match.start()]
+                path = open_code_match.group(1)
+                open_ticks = open_code_match.group(2)
+                # format_specifier = open_code_match.group(3)  # Unused
+
+                def append_if_not_empty(type: str, s: str) -> None:
+                    if s:
+                        tokens.append(Token(type, s))
+
+                append_if_not_empty("text", text)
+                append_if_not_empty("path", path)
+                append_if_not_empty("OPEN_CODE_BLOCK", open_ticks)
+                # append_if_not_empty("format_specifier", format_specifier)
+
+                s = s[open_code_match.end() + 1:]
                 in_code_block = True
             else:
                 tokens.append(Token("text", s))
                 s = ""
         else:
-            close_code_match = re.search(rf"\n\s*({open_ticks})\s*\n", s, flags=re.MULTILINE)
+            close_code_match = re.search(
+                rf"^[^\n\S]*({open_ticks})[^\n\S]*$", s, flags=re.MULTILINE
+            )
             if close_code_match and close_code_match.group(1) == open_ticks:
-                text = s[:close_code_match.start()]
-                close_ticks = close_code_match.group(1).strip()
+                text = s[: close_code_match.start() - 1]
+                close_ticks = close_code_match.group(1)
                 tokens.append(Token("text", text))
                 tokens.append(Token("CLOSE_CODE_BLOCK", close_ticks))
                 s = s[close_code_match.end():]
@@ -80,30 +82,32 @@ def custom_tokenize(s: str) -> List[Token]:
 
     return tokens
 
+
 path_token = some(lambda t: t.type == "path").named("path")
 open_code_token = some(lambda t: t.type == "OPEN_CODE_BLOCK").named("OPEN_CODE_BLOCK")
 text_token = some(lambda t: t.type == "text").named("text")
-close_code_token = some(lambda t: t.type == "CLOSE_CODE_BLOCK").named("CLOSE_CODE_BLOCK")
+close_code_token = some(lambda t: t.type == "CLOSE_CODE_BLOCK").named(
+    "CLOSE_CODE_BLOCK"
+)
 
-def to_text_file(path: str, open_code: str, text: List[str], close_code: str) -> TextFile:
-    # Combine text into a single string and remove code fence ticks
-    text = ''.join(text)[len(open_code):-len(close_code)]
-    return TextFile(path, text)
 
-default_parser = (
-    path_token
-    + open_code_token
-    + many(text_token | close_code_token)
-    + close_code_token
-    >> to_text_file
-) + -finished
+def to_text_file(tokens: tuple[Token, Token, Token, Token]) -> TextFile:
+    path, open_code, text, close_code = tokens
+    return TextFile(text=text.value, path=path.value, partial=False)
 
-def parse(s: str) -> TextFile:
+
+def default_parser(s: str) -> list[TextFile]:
+    parser = -maybe(text_token) + many((
+                                               path_token + open_code_token + text_token + close_code_token >> to_text_file
+                                       ) + -maybe(text_token)) + -maybe(finished)
+
     tokens = custom_tokenize(s)
-    return default_parser.parse(tokens)
+    return parser.parse(tokens)
 
 
-def dir2md(*files: str, formatter: str | Callable[[TextFile], str] = default_formatter) -> Generator[str, None, None]:
+def dir2md(
+        *files: str, formatter: str | Callable[[TextFile], str] = default_formatter
+) -> Generator[str, None, None]:
     # Ignore directories
     files = filter(os.path.isfile, files)
     # Iterate over the list of files
@@ -113,9 +117,10 @@ def dir2md(*files: str, formatter: str | Callable[[TextFile], str] = default_for
         yield from formatter(TextFile(text=code, path=file, partial=False)).splitlines()
 
 
-def md2dir(text: str, *, parser: Callable[[str], Generator[TextFile, None, None]] = default_parser) -> Generator[
-    TextFile, None, None]:
-    yield from parser(text)
+def md2dir(
+        text: str, *, parser: Callable[[str], Iterable[TextFile]] = default_parser
+) -> Iterable[TextFile]:
+    return parser(text)
 
 
 def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
@@ -124,10 +129,18 @@ def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
         new_directories = []
         for filename in filenames:
             directory = os.path.dirname(filename)
-            if directory and not os.path.exists(directory) and directory not in new_directories:
+            if (
+                    directory
+                    and not os.path.exists(directory)
+                    and directory not in new_directories
+            ):
                 new_directories.append(directory)
-        new_files = [file for file in filenames if not pathlib.Path(output_dir, file).exists()]
-        existing_files = [file for file in filenames if pathlib.Path(output_dir, file).exists()]
+        new_files = [
+            file for file in filenames if not pathlib.Path(output_dir, file).exists()
+        ]
+        existing_files = [
+            file for file in filenames if pathlib.Path(output_dir, file).exists()
+        ]
         if new_directories:
             print("The following directories will be created:")
             for directory in new_directories:
@@ -162,3 +175,19 @@ def dir2md_cli() -> None:
 
 def md2dir_cli() -> None:
     fire.Fire(md2dir_save)
+
+
+def test_md2dir():
+    result = list(md2dir("x\n```\nz\n```\n"))
+    expected = [TextFile(text="z", path="x", partial=False)]
+    assert result == expected
+
+    result = list(md2dir("x\n```y\nz\n```\n"))
+    expected = [TextFile(text="z", path="x", partial=False)]
+    assert result == expected
+
+    result = list(md2dir("path/to/file.md\n```python\nprint('hello world')\n```\n"))
+    expected = [
+        TextFile(text="print('hello world')", path="path/to/file.md", partial=False)
+    ]
+    assert result == expected

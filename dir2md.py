@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import glob as glob_module
 import os
 import pathlib
 import re
@@ -49,6 +50,7 @@ def custom_tokenize(s: str) -> List[Token]:
                 text = s[: open_code_match.start()]
                 path = open_code_match.group(1)
                 open_ticks = open_code_match.group(2)
+
                 # format_specifier = open_code_match.group(3)  # Unused
 
                 def append_if_not_empty(type: str, s: str) -> None:
@@ -97,7 +99,7 @@ def to_text_file(tokens: tuple[Token, Token, Token, Token]) -> TextFile:
     # Trim extraneous ":" from end of path
     if path.value.endswith(":"):
         path.value = path.value[:-1]
-    
+
     return TextFile(text=text.value, path=path.value, partial=False)
 
 
@@ -111,8 +113,11 @@ def default_parser(s: str) -> list[TextFile]:
 
 
 def dir2md(
-        *files: str, formatter: str | Callable[[TextFile], str] = default_formatter
+        *files: str, formatter: str | Callable[[TextFile], str] = default_formatter, glob: bool = False
 ) -> Generator[str, None, None]:
+    # Glob the files, if necessary
+    if glob:
+        files = [file for file in files for file in glob_module.glob(file)]
     # Ignore directories
     files = filter(os.path.isfile, files)
     # Iterate over the list of files

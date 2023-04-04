@@ -186,7 +186,6 @@ def dir2md(
     for file_or_pattern_with_truncation in files:
         file_or_pattern, truncs = extract_truncation_limits(
             file_or_pattern_with_truncation)
-        print(file_or_pattern, truncs)
         if not no_glob:
             file_paths = glob.glob(file_or_pattern)
         else:
@@ -213,7 +212,6 @@ def dir2md(
                             # Get the character index of the start of the line
                             end_trunc = sum(len(line) + 1 for line in code.splitlines()[:end_trunc])
                             end_unit = "char"
-                        print(start_trunc, end_trunc, start_unit, end_unit)
                         extracted += code[start_trunc:end_trunc]
                 code = extracted
                 if not code.endswith("\n"):

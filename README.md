@@ -70,14 +70,17 @@ dir2md **/*.py
 
 For example:
 
-- Get the first 10 lines of a file: `dir2md path/to/file.py[:10]`
-- Get lines 10 to 20: `dir2md path/to/file.py[10:20]`
-- Get everything from line 10 until the end of the file: `dir2md path/to/file.py[10:]`
-- Get the first 10 lines of a file followed by an ellpsis: `dir2md path/to/file.py[:10...]`
-- Negative indices: `dir2md path/to/file.py[-10:]`
-- Multiple truncations: `dir2md path/to/file.py[:10 20:]`
+- Get the first 10 lines of a file: `dir2md "path/to/file.py[:10]"`
+- Get lines 10 to 20: `dir2md "path/to/file.py[10:20]"`
+- Get everything from line 10 until the end of the file: `dir2md "path/to/file.py[10:]"`
+- Get the first 10 lines of a file followed by an ellpsis: `dir2md "path/to/file.py[:10...]"`
+- Negative indices: `dir2md "path/to/file.py[-10:]"`
+- Multiple truncations: `dir2md "path/to/file.py[:10 20:]"`
+- Omit the entire contents of the file with an ellipsis: `dir2md "path/to/file.py[..]"`
 
 This syntax can be used with wildcards as well.
+
+The quotation marks are required to prevent your shell from interpreting the brackets as special characters.
 
 ```bash
 dir2md *.py[:10]   # First 10 lines of all .py files

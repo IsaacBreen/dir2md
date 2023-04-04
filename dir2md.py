@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import glob as glob_module
+import glob
 import os
 import pathlib
 import re
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Literal
 from typing import Generator
 from typing import List
 from typing import NamedTuple
@@ -17,7 +17,8 @@ from funcparserlib.parser import some, finished, maybe, many
 class TextFile(NamedTuple):
     text: str
     path: str
-    partial: bool
+    start: int = 0
+    end: int = -1
 
 
 def default_formatter(text_file: TextFile) -> str:
@@ -30,7 +31,7 @@ def default_formatter(text_file: TextFile) -> str:
     while re.search(rf"\n\s*{ticks}", text_file.text):
         ticks += "`"
     r += ticks + "\n"
-    r += text_file.text + "\n"
+    r += text_file.text
     r += ticks + "\n\n"
     return r
 
@@ -100,7 +101,7 @@ def to_text_file(tokens: tuple[Token, Token, Token, Token]) -> TextFile:
     if path.value.endswith(":"):
         path.value = path.value[:-1]
 
-    return TextFile(text=text.value, path=path.value, partial=False)
+    return TextFile(text=text.value, path=path.value)
 
 
 def default_parser(s: str) -> list[TextFile]:
@@ -112,19 +113,112 @@ def default_parser(s: str) -> list[TextFile]:
     return parser.parse(tokens)
 
 
+class Position(NamedTuple):
+    value: int
+    unit: Literal["line", "char"]
+
+
+def extract_truncation_limits(file_path_with_truncation: str) -> tuple[str, list[str | tuple[int, int, str, str]]]:
+    trunc_regex_element_1_unnamed = r"((?:line|char)=)?-?\d*"
+    trunc_regex_element_2_unnamed = trunc_regex_element_1_unnamed + "\s*:\s*" + trunc_regex_element_1_unnamed
+    trunc_regex = rf"\[(\s*{trunc_regex_element_2_unnamed})*\s*\]$"
+
+    trunc_regex_element_1_named = r"((?P<{unit}>line|char)=)?(?P<{pos}>-?\d*)"
+    trunc_regex_element_2_named = (
+            trunc_regex_element_1_named.format(unit="start_unit", pos="start_trunc") + "\s*:\s*" +
+            trunc_regex_element_1_named.format(unit="end_unit", pos="end_trunc"))
+
+    match = re.search(r"\[.*\]", file_path_with_truncation)
+
+    if match:
+        assert match.end() == len(file_path_with_truncation)
+        file_path = file_path_with_truncation[:match.start()]
+        truncs = []
+
+        trunc_str = file_path_with_truncation[match.start() + 1:-1]
+        part_matches = re.finditer(rf"({trunc_regex_element_2_named})", trunc_str)
+
+        last_end = 0
+
+        for part_match in part_matches:
+            before = trunc_str[last_end:part_match.start()].strip()
+
+            if before:
+                truncs.append(before)
+
+            start_trunc, end_trunc = 0, -1
+            start_unit, end_unit = "line", "line"
+
+            if part_match.group("start_trunc"):
+                start_trunc = int(part_match.group("start_trunc"))
+            if part_match.group("end_trunc"):
+                end_trunc = int(part_match.group("end_trunc"))
+            if part_match.group("start_unit"):
+                start_unit = part_match.group("start_unit")
+            if part_match.group("end_unit"):
+                end_unit = part_match.group("end_unit")
+
+            truncs.append((start_trunc, end_trunc, start_unit, end_unit))
+            last_end = part_match.end()
+
+        after = trunc_str[last_end:].strip()
+
+        if after:
+            truncs.append(after)
+
+        for i, trunc in enumerate(truncs):
+            if isinstance(trunc, str):
+                if trunc.startswith('"') and trunc.endswith('"'):
+                    truncs[i] = trunc[1:-1]
+                elif trunc.startswith("\"") and trunc.endswith("\""):
+                    truncs[i] = f'"{trunc[1:-1]}"'
+
+        return file_path, truncs
+
+    else:
+        return file_path_with_truncation, [(0, -1, "char", "char")]
+
+
 def dir2md(
-        *files: str, formatter: str | Callable[[TextFile], str] = default_formatter, glob: bool = False
+        *files: str, formatter: str | Callable[[TextFile], str] = default_formatter, no_glob: bool = False,
+        on_missing: str = Literal["error", "ignore"]
 ) -> Generator[str, None, None]:
-    # Glob the files, if necessary
-    if glob:
-        files = [file for file in files for file in glob_module.glob(file)]
-    # Ignore directories
-    files = filter(os.path.isfile, files)
-    # Iterate over the list of files
-    for file in files:
-        with open(file, "r") as code_file:
-            code = code_file.read()
-        yield from formatter(TextFile(text=code, path=file, partial=False)).splitlines()
+    for file_or_pattern_with_truncation in files:
+        file_or_pattern, truncs = extract_truncation_limits(
+            file_or_pattern_with_truncation)
+        print(file_or_pattern, truncs)
+        if not no_glob:
+            file_paths = glob.glob(file_or_pattern)
+        else:
+            file_paths = [file_or_pattern]
+        for file_path in file_paths:
+            if not os.path.isfile(file_path):
+                if on_missing == "error":
+                    raise FileNotFoundError(f"File {file_path} not found")
+                else:
+                    continue
+            with open(file_path, "r") as code_file:
+                extracted = ""
+                code = code_file.read()
+                for trunc in truncs:
+                    if isinstance(trunc, str):
+                        extracted += trunc
+                    else:
+                        start_trunc, end_trunc, start_unit, end_unit = trunc
+                        if start_unit == "line":
+                            # Get the character index of the start of the line
+                            start_trunc = sum(len(line) + 1 for line in code.splitlines()[:start_trunc])
+                            start_unit = "char"
+                        if end_unit == "line":
+                            # Get the character index of the start of the line
+                            end_trunc = sum(len(line) + 1 for line in code.splitlines()[:end_trunc])
+                            end_unit = "char"
+                        print(start_trunc, end_trunc, start_unit, end_unit)
+                        extracted += code[start_trunc:end_trunc]
+                code = extracted
+                if not code.endswith("\n"):
+                    code += "\n"
+            yield from formatter(TextFile(path=file_path, text=code)).splitlines()
 
 
 def md2dir(
@@ -189,15 +283,19 @@ def md2dir_cli() -> None:
 
 def test_md2dir():
     result = list(md2dir("x\n```\nz\n```\n"))
-    expected = [TextFile(text="z", path="x", partial=False)]
+    expected = [TextFile(text="z", path="x")]
     assert result == expected
 
     result = list(md2dir("x\n```y\nz\n```\n"))
-    expected = [TextFile(text="z", path="x", partial=False)]
+    expected = [TextFile(text="z", path="x")]
     assert result == expected
 
     result = list(md2dir("path/to/file.md\n```python\nprint('hello world')\n```\n"))
     expected = [
-        TextFile(text="print('hello world')", path="path/to/file.md", partial=False)
+        TextFile(text="print('hello world')", path="path/to/file.md")
     ]
     assert result == expected
+
+
+if __name__ == "__main__":
+    dir2md_cli()

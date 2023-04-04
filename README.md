@@ -1,13 +1,13 @@
-# dir2md 
+# dir2md
 
 `dir2md` is a command-line tool that converts directories of files into Markdown code blocks. It also provides a reverse function, md2dir, which converts Markdown code blocks back into their original files.
 
-## Installation 
+## Installation
 
-Install `dir2md` using `pip`: 
+Install `dir2md` using `pip`:
 
-```bash 
-pip install dir2md 
+```bash
+pip install dir2md
 ```
 
 ## Usage
@@ -27,7 +27,7 @@ This will print the resulting Markdown to the console.
 To convert Markdown code blocks back into their original files, run:
 
 ```bash
-md2dir [options] <input_file>
+md2dir [options] 
 ```
 
 This will create the files in the current working directory.
@@ -62,6 +62,32 @@ To do so recursively, use `**`:
 dir2md **/*.py
 ```
 
-Note that the wildcard statement only works if it is expanded by the shell before the command is run. This means that you must use it in the command line or in a shell script, and it will not work if you pass it as a string to a function that runs the command.
+`dir2md` uses `glob` to parse your path pattern. To turn this off, use the `--no-glob` flag.
 
+#### Truncation
 
+`dir2md` now supports truncating long files with the `{start_line,end_line}` syntax added to the file or directory path.
+
+For example:
+
+- Get the first 10 lines of a file: `dir2md path/to/file.py[:10]`
+- Get lines 10 to 20: `dir2md path/to/file.py[10:20]`
+- Get everything from line 10 until the end of the file: `dir2md path/to/file.py[10:]`
+- Get the first 10 lines of a file followed by an ellpsis: `dir2md path/to/file.py[:10...]`
+- Negative indices: `dir2md path/to/file.py[-10:]`
+- Multiple truncations: `dir2md path/to/file.py[:10 20:]`
+
+This syntax can be used with wildcards as well.
+
+```bash
+dir2md *.py[:10]   # First 10 lines of all .py files
+dir2md **/*.py[5:]  # All lines after the first 5 lines in all .py files recursively
+```
+
+### Handling missing files
+
+You can customize the behavior when a specified file is not found using the `on_missing` option. By default, it is set to `"error"` which will raise a `FileNotFoundError`. To ignore the missing file and continue processing other files, pass `on_missing="ignore"` as an argument to the `dir2md` function.
+
+```python
+dir2md("missing_file.py", on_missing="ignore")
+```

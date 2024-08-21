@@ -80,6 +80,9 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
         return "", code
 
     def _format_error_message(start_line: int, code_block: str, path_replacement_field: str) -> str:
+        # TODO: fix this
+        #  - don't hardcode the language name
+        #  - pass this function the full lines and let it choose what to show
         error_message = f"{RED}error: Could not find a path for code block{RESET}\n"
         error_message += f"Error at line {start_line + 1}:6\n"
         error_message += f"     |\n"
@@ -95,10 +98,10 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
 
         error_message += f"     | {YELLOW}Option 2: Add a commented path below the code block start{RESET}\n"
         error_message += f"     |\n"
-        error_message += f" {start_line + 1: >3} | ```python\n"
-        error_message += f"{GREEN}+{RESET} {start_line + 2: >2} | # {path_replacement_field} {YELLOW}<--- Add a path here as a comment{RESET}\n"
-        error_message += f" {start_line + 3: >3} | {code_block.splitlines()[0]}\n"
-        error_message += f" {start_line + 4: >3} | ```\n"
+        error_message += f" {start_line: >3} | ```python\n"
+        error_message += f"{GREEN}+{RESET} {start_line + 1: >2} | # {path_replacement_field} {YELLOW}<--- Add a path here as a comment{RESET}\n"
+        error_message += f" {start_line + 2: >3} | {code_block.splitlines()[0]}\n"
+        error_message += f" {start_line + 3: >3} | ```\n"
 
         return error_message
 

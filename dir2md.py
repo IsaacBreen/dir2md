@@ -75,7 +75,7 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
         return "", code
 
     code_blocks = []
-    pattern = re.compile(r"(?<!`)(?=\n|^)(`{3,})(.*?)\n([\s\S]*?)\n\1(?=\n|$)", re.MULTILINE)
+    pattern = re.compile(r"(?<!`)(?=\n|^)(`{3,})(.*?)\n((?!\1(?=\n|$))[^\n]*\n?)\1(?=\n|$)", re.MULTILINE)
     matches = pattern.finditer(s)
     for match in matches:
         language = match.group(2).strip()

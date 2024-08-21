@@ -91,8 +91,8 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
                 # If no path found above, assume no path for this case
                 path = ""
 
-        # Fix: Add the newline character back to the code
-        code = "\n" + code
+        if not code.endswith("\n"):
+            code += "\n"
 
         code_blocks.append(TextFile(text=code, path=path))
 

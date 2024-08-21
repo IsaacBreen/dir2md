@@ -81,7 +81,7 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
 
     def _format_error_message(start_line: int, code_block: str, path_replacement_field: str) -> str:
         error_message = f"{RED}error: Could not find a path for code block{RESET}\n"
-        error_message += f"   --> <path/to/file>:{start_line + 1}:6\n"
+        error_message += f"Error at line {start_line + 1}:6\n"
         error_message += f"     |\n"
         error_message += f"{start_line + 1: >3}  | {code_block.splitlines()[0]}\n"
         error_message += f"     | {RED}^^^^^{RESET} {YELLOW}Expected a commented path above or below the code block:{RESET}\n\n"

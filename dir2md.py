@@ -184,10 +184,19 @@ def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
             click.echo("The following files will be overwritten:")
             for file in existing_files:
                 click.echo(f"  {pathlib.Path(output_dir, file)}")
-        click.echo("Continue? (y/n)")
-        if input() != "y":
+        # Allow "all" as a response
+        while True:
+            click.echo("Continue? (y/n/all)")
+            response = input().lower()
+            if response in ("y", "n", "all"):
+                break
+            click.echo("Invalid response. Please enter 'y', 'n', or 'all'.")
+        if response == "n":
             click.echo("Aborted.")
             return
+        elif response == "all":
+            yes = True  # Set yes to True for subsequent prompts
+
     for file in files:
         click.echo(f"Writing {pathlib.Path(output_dir, file.path)}")
         path = pathlib.Path(output_dir, file.path)

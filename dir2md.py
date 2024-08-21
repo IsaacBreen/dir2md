@@ -57,19 +57,20 @@ def comment_prefix_for_language(language: str) -> str:
 
 
 def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above") -> list[TextFile]:
-    def _find_path_above(lines: list[str], i: int) -> str:
-        path_pattern = path_replacement_field.format(r"(.*)")
-        if i > 0 and re.match(path_pattern, lines[i - 1]):
-            return lines[i - 1].strip()[len(path_replacement_field.format("")):]
+    def _find_path_above(text: str) -> str:
+        lines = text.splitlines()
+        if lines and path_replacement_field.format(lines[-1].strip()):
+            return lines[-1].strip()
         return ""
 
-    def _find_path_below(lines: list[str], i: int, language: str) -> tuple[str, int]:
+    def _find_path_below(code: str, language: str) -> tuple[str, str]:
         comment_prefix = comment_prefix_for_language(language)
-        path_pattern = rf"{comment_prefix} {path_replacement_field.format(r'(.*)')}"
-        if i + 1 < len(lines) and re.match(path_pattern, lines[i + 1]):
-            path = lines[i + 1][len(f"{comment_prefix} {path_replacement_field.format('')}"):].strip()
-            return path, i + 2
-        return "", i + 1
+        lines = code.splitlines()
+        if lines and lines[0].startswith(f"{comment_prefix} {path_replacement_field.format('')}"):
+            path = lines[0][len(comment_prefix) + 1:].strip()
+            code = "\n".join(lines[1:])
+            return path, code
+        return "", code
 
     code_blocks = []
     lines = s.splitlines()
@@ -77,32 +78,27 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
     while i < len(lines):
         line = lines[i]
         if line.startswith("```"):
-            ticks = line
+            start = i
+            ticks = line[:len(line) - len(line.lstrip("`"))]
             language = line[len(ticks):].strip()
-            code = []
             i += 1
             while i < len(lines) and not lines[i].startswith(ticks):
-                code.append(lines[i])
                 i += 1
             if i < len(lines) and lines[i].startswith(ticks):
                 i += 1
 
-            if path_location == "above":
-                path = _find_path_above(lines, i - len(code) - 1)
-                if not path:
-                    path, new_i = _find_path_below(lines, i - len(code) - 1, language)
-                    if path:
-                        code = lines[new_i:i - 1]
-            else:  # path_location == "below"
-                path, new_i = _find_path_below(lines, i - len(code) - 1, language)
-                if not path:
-                    path = _find_path_above(lines, i - len(code) - 1)
-                else:
-                    code = lines[new_i:i - 1]
+            code = "\n".join(lines[start + 1:i - 1])
 
-            code = "\n".join(code)
-            if not code.endswith("\n"):
-                code += "\n"
+            above_text = lines[start - 1] if start > 0 else ""
+
+            if path_location == "above":
+                path = _find_path_above(above_text)
+                if not path:
+                    path, code = _find_path_below(code, language)
+            else:  # path_location == "below"
+                path, code = _find_path_below(code, language)
+                if not path:
+                    path = _find_path_above(above_text)
 
             code_blocks.append(TextFile(text=code, path=path))
         else:
@@ -227,8 +223,8 @@ def test_default_parser():
         """
     )
     expected = [
-        TextFile(text="x = 1\n", path="out.py"),
-        TextFile(text="let x = 1;\n", path="out.rs"),
+        TextFile(text="x = 1", path="out.py"),
+        TextFile(text="let x = 1;", path="out.rs"),
     ]
     assert list(default_parser(md)) == expected
 

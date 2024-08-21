@@ -56,7 +56,9 @@ def comment_prefix_for_language(language: str) -> str:
     return ""
 
 
-def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above", ignore_missing_path: bool = False) -> list[TextFile]:
+def default_parser(
+        s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above",
+        ignore_missing_path: bool = False) -> list[TextFile]:
     def _find_path_above(text: str) -> str:
         lines = text.splitlines()
         if lines and path_replacement_field.format(lines[-1].strip()):
@@ -72,9 +74,33 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
             return path, code
         return "", code
 
+    def _format_error_message(start_line: int, code_block: str, path_replacement_field: str) -> str:
+        error_message = f"error: Could not find a path for code block\n"
+        error_message += f"   --> <path/to/file>:{start_line + 1}:6\n"
+        error_message += f"    |\n"
+        error_message += f"{start_line + 1} | {code_block.splitlines()[0]}\n"
+        error_message += f"    | ^^^^^^ Expected a commented path above or below the code block:\n\n"
+
+        error_message += f"    | Option 1: Add a commented path above the code block start\n"
+        error_message += f"    |\n"
+        error_message += f"{start_line}   | {path_replacement_field} <--- Add a path here\n"
+        error_message += f"{start_line + 1} | ```python\n"
+        error_message += f"{start_line + 2} | {code_block.splitlines()[0]}\n"
+        error_message += f"{start_line + 3} | ```\n\n"
+
+        error_message += f"    | Option 2: Add a commented path below the code block start\n"
+        error_message += f"    |\n"
+        error_message += f"{start_line + 1} | ```python\n"
+        error_message += f"{start_line + 2} | # {path_replacement_field} <--- Add a path here as a comment\n"
+        error_message += f"{start_line + 3} | {code_block.splitlines()[0]}\n"
+        error_message += f"{start_line + 4} | ```\n"
+
+        return error_message
+
     code_blocks = []
     lines = s.splitlines()
     i = 0
+    missing_path_count = 0
     while i < len(lines):
         line = lines[i]
         if line.startswith("```"):
@@ -100,29 +126,16 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
                     above_text = lines[start - 1]
                     path = _find_path_above(above_text)
             if not path:
-                if ignore_missing_path:
-                    continue
-                context_above = lines[max(0, start - 3):start]
-                context_below = lines[i:min(len(lines), i + 3)]
-                error_message = f"Could not find a path for code block starting at line {start + 1}.\n"
-                error_message += f"Expected a commented path like this:\n"
-                error_message += f"```diff\n"
-                error_message += f"- {lines[start-1]}\n" if start > 0 else ""
-                error_message += f"+ {comment_prefix_for_language(language)} {path_replacement_field.format('path/to/file')}\n"
-                error_message += f"```\n"
-                error_message += f"Context:\n"
-                error_message += f"```\n"
-                error_message += f"{''.join(context_above)}\n"
-                error_message += f"{lines[start]}\n"
-                error_message += f"{code}\n"
-                error_message += f"{lines[i-1]}\n"
-                error_message += f"{''.join(context_below)}\n"
-                error_message += f"```"
-                raise ValueError(error_message)
-
-            code_blocks.append(TextFile(text=code, path=path))
+                missing_path_count += 1
+                if not ignore_missing_path:
+                    raise ValueError(_format_error_message(start, code, path_replacement_field))
+            else:
+                code_blocks.append(TextFile(text=code, path=path))
         else:
             i += 1
+
+    if missing_path_count > 0 and ignore_missing_path:
+        print(f"Warning: Skipped {missing_path_count} code blocks due to missing paths.")
 
     return code_blocks
 
@@ -131,7 +144,12 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
 @click.argument('files', nargs=-1)
 @click.option('--no-glob', is_flag=True, help='Disable globbing for file arguments.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option('--path-location', default="above", type=click.Choice(['above', 'below']), help='The location of the file path relative to the code block.')
+@click.option(
+    '--path-location',
+    default="above",
+    type=click.Choice(['above', 'below']),
+    help='The location of the file path relative to the code block.'
+    )
 def dir2md(
         files: str, no_glob: bool,
         path_replacement_field: str, path_location: Literal["above", "below"]
@@ -157,10 +175,15 @@ def dir2md(
 @click.option('--output-dir', default=".", help='The directory to output the files to.')
 @click.option('--yes', is_flag=True, help='Automatically answer yes to all prompts.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option('--path-location', default="above", type=click.Choice(['above', 'below']), help='The location of the file path relative to the code block.')
+@click.option(
+    '--path-location',
+    default="above",
+    type=click.Choice(['above', 'below']),
+    help='The location of the file path relative to the code block.'
+    )
 @click.option('--paste', is_flag=True, help='Read the markdown text from the clipboard.')
 @click.option('--path', type=click.Path(exists=True), help='Read the markdown text from a file.')
-@click.option('--ignore-missing-path', is_flag=True, help='Ignore code blocks without a path.')
+@click.option('--ignore-missing-path', is_flag=True, help='Ignore code blocks without a specified path.')
 def md2dir(
         output_dir: str, yes: bool, path_replacement_field: str,
         path_location: Literal["above", "below"], paste: bool, path: str, ignore_missing_path: bool
@@ -177,14 +200,24 @@ def md2dir(
         with open(path, 'r') as f:
             text = f.read()
 
-    save_dir(files=list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location, ignore_missing_path=ignore_missing_path)),
-             output_dir=output_dir, yes=yes)
+    save_dir(
+        files=list(
+            default_parser(
+                text, path_replacement_field=path_replacement_field,
+                path_location=path_location, ignore_missing_path=ignore_missing_path
+                )
+            ),
+        output_dir=output_dir, yes=yes
+        )
 
 
-def md2dir_save(text: str, output_dir: str, yes: bool = False, path_replacement_field: str = "{}",
-                path_location: Literal["above", "below"] = "above", ignore_missing_path: bool = False) -> None:
-    save_dir(files=list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location, ignore_missing_path=ignore_missing_path)),
-             output_dir=output_dir, yes=yes)
+def md2dir_save(
+        text: str, output_dir: str, yes: bool = False, path_replacement_field: str = "{}",
+        path_location: Literal["above", "below"] = "above") -> None:
+    save_dir(
+        files=list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location)),
+        output_dir=output_dir, yes=yes
+        )
 
 
 def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
@@ -236,7 +269,7 @@ def test_default_parser():
         # out.py
         x = 1
         ```
-        
+
         ```rust
         // out.rs
         let x = 1;
@@ -250,10 +283,12 @@ def test_default_parser():
     assert list(default_parser(md)) == expected
 
 
-@pytest.mark.parametrize("text_file, expected", [
-    (TextFile(text="x = 1\n", path="out.py"), "out.py\n\n```python\nx = 1\n```\n\n"),
-    (TextFile(text="let x = 1;\n", path="out.rs"), "out.rs\n\n```rust\nlet x = 1;\n```\n\n"),
-])
+@pytest.mark.parametrize(
+    "text_file, expected", [
+        (TextFile(text="x = 1\n", path="out.py"), "out.py\n\n```python\nx = 1\n```\n\n"),
+        (TextFile(text="let x = 1;\n", path="out.rs"), "out.rs\n\n```rust\nlet x = 1;\n```\n\n"),
+    ]
+    )
 def test_default_formatter(text_file: TextFile, expected: str) -> None:
     assert default_formatter(text_file) == expected
 

@@ -11,7 +11,7 @@ from typing import NamedTuple
 
 import click
 import tempfile
-import pyperclip  # Import pyperclip
+import pyperclip
 
 
 class TextFile(NamedTuple):

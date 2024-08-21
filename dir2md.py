@@ -56,6 +56,24 @@ def comment_prefix_for_language(language: str) -> str:
 
 
 def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above") -> list[TextFile]:
+    def _find_path_above(text: str) -> str:
+        path_pattern = path_replacement_field.format(r"(.*)")
+        path_match = re.search(rf"{path_pattern}\n$", text, re.MULTILINE)
+        if path_match:
+            return path_match.group(1).strip()
+        return ""
+
+    def _find_path_below(code: str, language: str) -> tuple[str, str]:
+        comment_prefix = comment_prefix_for_language(language)
+        path_pattern = rf"{comment_prefix} {path_replacement_field.format(r'(.*)')}"
+        # Match only at the beginning of the code block
+        path_match = re.match(path_pattern, code)
+        if path_match:
+            path = path_match.group(1).strip()
+            code = code[path_match.end():]
+            return path, code
+        return "", code
+
     code_blocks = []
     pattern = r"(?<!`)(?=\n|^)([`~]{3,})(.*?)\n([\s\S]*?)\n\1(?=\n|$)"
     matches = re.finditer(pattern, s, re.MULTILINE)
@@ -64,32 +82,22 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
         language = match.group(2).strip()
         code = match.group(3)
 
-        path_pattern = path_replacement_field.format(r"(.*)")
-        if path_location == "below":
-            comment_prefix = comment_prefix_for_language(language)
-            path_pattern = rf"{comment_prefix} {path_pattern}"
-            path_match = re.search(path_pattern, code, re.MULTILINE)
-            if path_match:
-                path = path_match.group(1).strip()
-                code = code[:path_match.start()] + code[path_match.end():]
-            else:
-                # If no path found below, assume it's above for this case
-                start = match.start()
-                above_text = s[:start]
-                path_match = re.search(rf"{path_pattern}\n$", above_text, re.MULTILINE)
-                if path_match:
-                    path = path_match.group(1).strip()
-                else:
-                    continue
-        else:  # path_location == "above"
-            start = match.start()
-            above_text = s[:start]
-            path_match = re.search(rf"{path_pattern}\n$", above_text, re.MULTILINE)
-            if path_match:
-                path = path_match.group(1).strip()
-            else:
-                # If no path found above, assume no path for this case
-                path = ""
+        start = match.start()
+        above_text = s[:start]
+
+        path = ""
+        if path_location == "above":
+            # Try above first
+            path = _find_path_above(above_text)
+            if not path:
+                # If not found above, try below
+                path, code = _find_path_below(code, language)
+        else:  # path_location == "below"
+            # Try below first
+            path, code = _find_path_below(code, language)
+            if not path:
+                # If not found below, try above
+                path = _find_path_above(above_text)
 
         if not code.endswith("\n"):
             code += "\n"

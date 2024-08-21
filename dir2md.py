@@ -5,14 +5,12 @@ import os
 import pathlib
 import re
 import textwrap
-from typing import Callable, Iterable, Literal
-from typing import Generator
-from typing import List
+from typing import Literal
 from typing import NamedTuple
 
 import click
-import tempfile
 import pyperclip
+import pytest
 
 
 class TextFile(NamedTuple):
@@ -229,6 +227,14 @@ def test_default_parser():
         TextFile(text="let x = 1;\n", path="out.rs"),
     ]
     assert list(default_parser(md)) == expected
+
+
+@pytest.mark.parametrize("text_file, expected", [
+    (TextFile(text="x = 1\n", path="out.py"), "out.py\n\n```python\nx = 1\n```\n\n"),
+    (TextFile(text="let x = 1;\n", path="out.rs"), "out.rs\n\n```rust\nlet x = 1;\n```\n\n"),
+])
+def test_default_formatter(text_file: TextFile, expected: str) -> None:
+    assert default_formatter(text_file) == expected
 
 
 if __name__ == "__main__":

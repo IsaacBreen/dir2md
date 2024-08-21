@@ -57,7 +57,7 @@ def comment_prefix_for_language(language: str) -> str:
 
 def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above") -> list[TextFile]:
     code_blocks = []
-    pattern = r"(?<!`)(?=\n|^)([`~]{3,})(.*?)\n([\s\S]*?)\n\1(?=\n|$)"  # Corrected pattern to include start of string
+    pattern = r"(?<!`)(?=\n|^)([`~]{3,})(.*?)\n([\s\S]*?)\n\1(?=\n|$)"
     matches = re.finditer(pattern, s, re.MULTILINE)
     for match in matches:
         ticks = match.group(1)
@@ -90,6 +90,9 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
             else:
                 # If no path found above, assume no path for this case
                 path = ""
+
+        # Fix: Add the newline character back to the code
+        code = "\n" + code
 
         code_blocks.append(TextFile(text=code, path=path))
 

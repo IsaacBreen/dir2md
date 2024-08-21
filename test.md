@@ -1,3 +1,5 @@
+dir2md2.py
+```
 from __future__ import annotations
 
 import glob
@@ -9,9 +11,8 @@ from typing import Generator
 from typing import List
 from typing import NamedTuple
 
-import click
+import fire
 import tempfile
-import pyperclip  # Import pyperclip
 
 
 class TextFile(NamedTuple):
@@ -57,24 +58,6 @@ def comment_prefix_for_language(language: str) -> str:
 
 
 def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above") -> list[TextFile]:
-    def _find_path_above(text: str) -> str:
-        path_pattern = path_replacement_field.format(r"(.*)")
-        path_match = re.search(rf"{path_pattern}\n$", text, re.MULTILINE)
-        if path_match:
-            return path_match.group(1).strip()
-        return ""
-
-    def _find_path_below(code: str, language: str) -> tuple[str, str]:
-        comment_prefix = comment_prefix_for_language(language)
-        path_pattern = rf"{comment_prefix} {path_replacement_field.format(r'(.*)')}"
-        # Match only at the beginning of the code block
-        path_match = re.match(path_pattern, code)
-        if path_match:
-            path = path_match.group(1).strip()
-            code = code[path_match.end():]
-            return path, code
-        return "", code
-
     code_blocks = []
     pattern = r"(?<!`)(?=\n|^)([`~]{3,})(.*?)\n([\s\S]*?)\n\1(?=\n|$)"
     matches = re.finditer(pattern, s, re.MULTILINE)
@@ -83,22 +66,32 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
         language = match.group(2).strip()
         code = match.group(3)
 
-        start = match.start()
-        above_text = s[:start]
-
-        path = ""
-        if path_location == "above":
-            # Try above first
-            path = _find_path_above(above_text)
-            if not path:
-                # If not found above, try below
-                path, code = _find_path_below(code, language)
-        else:  # path_location == "below"
-            # Try below first
-            path, code = _find_path_below(code, language)
-            if not path:
-                # If not found below, try above
-                path = _find_path_above(above_text)
+        path_pattern = path_replacement_field.format(r"(.*)")
+        if path_location == "below":
+            comment_prefix = comment_prefix_for_language(language)
+            path_pattern = rf"{comment_prefix} {path_pattern}"
+            path_match = re.search(path_pattern, code, re.MULTILINE)
+            if path_match:
+                path = path_match.group(1).strip()
+                code = code[:path_match.start()] + code[path_match.end():]
+            else:
+                # If no path found below, assume it's above for this case
+                start = match.start()
+                above_text = s[:start]
+                path_match = re.search(rf"{path_pattern}\n$", above_text, re.MULTILINE)
+                if path_match:
+                    path = path_match.group(1).strip()
+                else:
+                    continue
+        else:  # path_location == "above"
+            start = match.start()
+            above_text = s[:start]
+            path_match = re.search(rf"{path_pattern}\n$", above_text, re.MULTILINE)
+            if path_match:
+                path = path_match.group(1).strip()
+            else:
+                # If no path found above, assume no path for this case
+                path = ""
 
         if not code.endswith("\n"):
             code += "\n"
@@ -108,16 +101,10 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
     return code_blocks
 
 
-@click.command()
-@click.argument('files', nargs=-1)
-@click.option('--no-glob', is_flag=True, help='Disable globbing for file arguments.')
-@click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option('--path-location', default="above", type=click.Choice(['above', 'below']), help='The location of the file path relative to the code block.')
 def dir2md(
-        files: str, no_glob: bool,
-        path_replacement_field: str, path_location: Literal["above", "below"]
-) -> None:
-    """Converts a directory of files to a markdown document."""
+        *files: str, formatter: str | Callable[[TextFile], str] = default_formatter, no_glob: bool = False,
+        path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above"
+) -> Generator[str, None, None]:
     for file_or_pattern in files:
         if not no_glob:
             file_paths = glob.glob(file_or_pattern)
@@ -131,40 +118,14 @@ def dir2md(
                 if not code.endswith("\n"):
                     code += "\n"
             language = infer_language(file_path)
-            click.echo(''.join(default_formatter(TextFile(path=file_path, text=code)).splitlines()))
+            yield from formatter(TextFile(path=file_path, text=code)).splitlines()
 
 
-@click.command()
-@click.option('--output-dir', default=".", help='The directory to output the files to.')
-@click.option('--yes', is_flag=True, help='Automatically answer yes to all prompts.')
-@click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option('--path-location', default="above", type=click.Choice(['above', 'below']), help='The location of the file path relative to the code block.')
-@click.option('--paste', is_flag=True, help='Read the markdown text from the clipboard.')
-@click.option('--path', type=click.Path(exists=True), help='Read the markdown text from a file.')
 def md2dir(
-        output_dir: str, yes: bool, path_replacement_field: str,
-        path_location: Literal["above", "below"], paste: bool, path: str
-) -> None:
-    """Converts a markdown document to a directory of files."""
-    if paste and path:
-        raise click.UsageError("You cannot specify both --paste and --path.")
-    if not paste and not path:
-        raise click.UsageError("You must specify either --paste or --path.")
-
-    if paste:
-        text = pyperclip.paste()
-    elif path:
-        with open(path, 'r') as f:
-            text = f.read()
-
-    save_dir(files=list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location)),
-             output_dir=output_dir, yes=yes)
-
-
-def md2dir_save(text: str, output_dir: str, yes: bool = False, path_replacement_field: str = "{}",
-                path_location: Literal["above", "below"] = "above") -> None:
-    save_dir(files=list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location)),
-             output_dir=output_dir, yes=yes)
+        text: str, *, parser: Callable[[str], Iterable[TextFile]] = default_parser,
+        path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above"
+) -> Iterable[TextFile]:
+    return parser(text, path_replacement_field=path_replacement_field, path_location=path_location)
 
 
 def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
@@ -186,27 +147,41 @@ def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
             file for file in filenames if pathlib.Path(output_dir, file).exists()
         ]
         if new_directories:
-            click.echo("The following directories will be created:")
+            print("The following directories will be created:")
             for directory in new_directories:
-                click.echo(f"  {directory!r}")
+                print(f"  {directory!r}")
         if new_files:
-            click.echo("The following files will be created:")
+            print("The following files will be created:")
             for file in new_files:
-                click.echo(f"  {pathlib.Path(output_dir, file)}")
+                print(f"  {pathlib.Path(output_dir, file)}")
         if existing_files:
-            click.echo("The following files will be overwritten:")
+            print("The following files will be overwritten:")
             for file in existing_files:
-                click.echo(f"  {pathlib.Path(output_dir, file)}")
-        click.echo("Continue? (y/n)")
+                print(f"  {pathlib.Path(output_dir, file)}")
+        print("Continue? (y/n)")
         if input() != "y":
-            click.echo("Aborted.")
+            print("Aborted.")
             return
     for file in files:
-        click.echo(f"Writing {pathlib.Path(output_dir, file.path)}")
+        print(f"Writing {pathlib.Path(output_dir, file.path)}")
         path = pathlib.Path(output_dir, file.path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
             f.write(file.text)
+
+
+def md2dir_save(text: str, output_dir: str, yes: bool = False, path_replacement_field: str = "{}",
+                path_location: Literal["above", "below"] = "above") -> None:
+    save_dir(files=list(md2dir(text, path_replacement_field=path_replacement_field, path_location=path_location)),
+             output_dir=output_dir, yes=yes)
+
+
+def dir2md_cli() -> None:
+    fire.Fire(dir2md)
+
+
+def md2dir_cli() -> None:
+    fire.Fire(md2dir_save)
 
 
 def test_md2dir():
@@ -239,9 +214,9 @@ def test_md2dir():
     for text, expected, *args in test_cases:
         if args:
             path_replacement_field, path_location = args
-            result = list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location))
+            result = list(md2dir(text, path_replacement_field=path_replacement_field, path_location=path_location))
         else:
-            result = list(default_parser(text))
+            result = list(md2dir(text))
         assert result == expected
 
 
@@ -254,9 +229,7 @@ def test_dir2md_md2dir():
             f.write("println!(\"hello world\");\n")
 
         # Test dir2md
-        # Note: This part is tricky to test with click due to the print statements.
-        #       It would require capturing the output and comparing it.
-        #       For now, we'll skip this part of the test.
+        md_output = "\n".join(dir2md(os.path.join(tmpdirname, "*")))
 
         # Test md2dir
         with tempfile.TemporaryDirectory() as output_dir:
@@ -270,7 +243,6 @@ def test_dir2md_md2dir():
 
 
 if __name__ == "__main__":
-    cli = click.Group()
-    cli.add_command(dir2md)
-    cli.add_command(md2dir)
-    cli()
+    dir2md_cli()
+```
+

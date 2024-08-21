@@ -12,6 +12,11 @@ import click
 import pyperclip
 import pytest
 
+# Add color codes
+RED = "\033[91m"
+YELLOW = "\033[93m"
+RESET = "\033[0m"
+
 
 class TextFile(NamedTuple):
     text: str
@@ -75,23 +80,23 @@ def default_parser(
         return "", code
 
     def _format_error_message(start_line: int, code_block: str, path_replacement_field: str) -> str:
-        error_message = f"error: Could not find a path for code block\n"
+        error_message = f"{RED}error: Could not find a path for code block{RESET}\n"
         error_message += f"   --> <path/to/file>:{start_line + 1}:6\n"
         error_message += f"    |\n"
         error_message += f"{start_line + 1} | {code_block.splitlines()[0]}\n"
-        error_message += f"    | ^^^^^^ Expected a commented path above or below the code block:\n\n"
+        error_message += f"    | {RED}^{RESET}{RED}^{RESET}{RED}^{RESET}{RED}^{RESET}{RED}^ {YELLOW}Expected a commented path above or below the code block:{RESET}\n\n"
 
-        error_message += f"    | Option 1: Add a commented path above the code block start\n"
+        error_message += f"    | {YELLOW}Option 1: Add a commented path above the code block start{RESET}\n"
         error_message += f"    |\n"
-        error_message += f"{start_line}   | {path_replacement_field} <--- Add a path here\n"
+        error_message += f"{start_line}   | {path_replacement_field} {YELLOW}<--- Add a path here{RESET}\n"
         error_message += f"{start_line + 1} | ```python\n"
         error_message += f"{start_line + 2} | {code_block.splitlines()[0]}\n"
         error_message += f"{start_line + 3} | ```\n\n"
 
-        error_message += f"    | Option 2: Add a commented path below the code block start\n"
+        error_message += f"    | {YELLOW}Option 2: Add a commented path below the code block start{RESET}\n"
         error_message += f"    |\n"
         error_message += f"{start_line + 1} | ```python\n"
-        error_message += f"{start_line + 2} | # {path_replacement_field} <--- Add a path here as a comment\n"
+        error_message += f"{start_line + 2} | # {path_replacement_field} {YELLOW}<--- Add a path here as a comment{RESET}\n"
         error_message += f"{start_line + 3} | {code_block.splitlines()[0]}\n"
         error_message += f"{start_line + 4} | ```\n"
 
@@ -135,7 +140,7 @@ def default_parser(
             i += 1
 
     if missing_path_count > 0 and ignore_missing_path:
-        print(f"Warning: Skipped {missing_path_count} code blocks due to missing paths.")
+        print(f"{YELLOW}Warning: Skipped {missing_path_count} code blocks due to missing paths.{RESET}")
 
     return code_blocks
 

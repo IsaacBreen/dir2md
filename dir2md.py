@@ -10,6 +10,7 @@ from typing import List
 from typing import NamedTuple
 
 import fire
+import tempfile
 
 
 class TextFile(NamedTuple):
@@ -170,19 +171,59 @@ def md2dir_cli() -> None:
 
 
 def test_md2dir():
-    result = list(md2dir("x\n```\nz\n```\n"))
-    expected = [TextFile(text="z", path="x")]
-    assert result == expected
-
-    result = list(md2dir("x\n```y\nz\n```\n"))
-    expected = [TextFile(text="z", path="x")]
-    assert result == expected
-
-    result = list(md2dir("path/to/file.md\n```python\nprint('hello world')\n```\n"))
-    expected = [
-        TextFile(text="print('hello world')", path="path/to/file.md")
+    test_cases = [
+        # Simple test
+        ("x\n```\nz\n```\n", [TextFile(text="z\n", path="x")]),
+        # With language
+        ("x\n```python\nz\n```\n", [TextFile(text="z\n", path="x")]),
+        # Longer file
+        ("path/to/file.md\n```python\nprint('hello world')\nprint('goodbye world')\n```\n",
+         [TextFile(text="print('hello world')\nprint('goodbye world')\n", path="path/to/file.md")]),
+        # Empty file
+        ("empty.py\n```python\n```\n", [TextFile(text="\n", path="empty.py")]),
+        # Multiple languages
+        ("x.py\n```python\nz\n```\ny.rs\n```rust\na\n```\n",
+         [TextFile(text="z\n", path="x.py"), TextFile(text="a\n", path="y.rs")]),
+        # Path below
+        ("```python\n# path/to/file.py\nz\n```\n",
+         [TextFile(text="z\n", path="path/to/file.py")], "{}", "below"),
+        # Path below with different comment prefix
+        ("```rust\n// path/to/file.rs\na\n```\n",
+         [TextFile(text="a\n", path="path/to/file.rs")], "{}", "below"),
+        # Different path replacement field
+        ("File: path/to/file.py\n```python\nz\n```\n",
+         [TextFile(text="z\n", path="path/to/file.py")], "File: {}"),
     ]
-    assert result == expected
+
+    for text, expected, *args in test_cases:
+        if args:
+            path_replacement_field, path_location = args
+            result = list(md2dir(text, path_replacement_field=path_replacement_field, path_location=path_location))
+        else:
+            result = list(md2dir(text))
+        assert result == expected
+
+
+def test_dir2md_md2dir():
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        # Create test files
+        with open(os.path.join(tmpdirname, "test.py"), "w") as f:
+            f.write("print('hello world')\n")
+        with open(os.path.join(tmpdirname, "test.rs"), "w") as f:
+            f.write("println!(\"hello world\");\n")
+
+        # Test dir2md
+        md_output = "\n".join(dir2md(os.path.join(tmpdirname, "*")))
+
+        # Test md2dir
+        with tempfile.TemporaryDirectory() as output_dir:
+            md2dir_save(md_output, output_dir, yes=True)
+
+            # Compare files
+            with open(os.path.join(output_dir, "test.py"), "r") as f:
+                assert f.read() == "print('hello world')\n"
+            with open(os.path.join(output_dir, "test.rs"), "r") as f:
+                assert f.read() == "println!(\"hello world\");\n"
 
 
 if __name__ == "__main__":

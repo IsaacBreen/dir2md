@@ -66,7 +66,7 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
 
     def _find_path_below(code: str, language: str) -> tuple[str, str]:
         comment_prefix = comment_prefix_for_language(language)
-        path_pattern = rf"{comment_prefix} {path_replacement_field.format(r'(.*)')}"
+        path_pattern = rf"^{comment_prefix} {path_replacement_field.format(r'(.*)')}"
         path_match = re.match(path_pattern, code)
         if path_match:
             path = path_match.group(1).strip()
@@ -75,8 +75,8 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
         return "", code
 
     code_blocks = []
-    pattern = r"(?<!`)(?=\n|^)([`~]{3,})(.*?)\n([\s\S]*?)\n\1(?=\n|$)"
-    matches = re.finditer(pattern, s, re.MULTILINE)
+    pattern = re.compile(r"(?<!`)(?=\n|^)(`{3,})(.*?)\n([\s\S]*?)\n\1(?=\n|$)", re.MULTILINE)
+    matches = pattern.finditer(s)
     for match in matches:
         language = match.group(2).strip()
         code = match.group(3)
@@ -84,7 +84,6 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
         start = match.start()
         above_text = s[:start]
 
-        path = ""
         if path_location == "above":
             path = _find_path_above(above_text)
             if not path:
@@ -206,15 +205,15 @@ def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
 def test_default_parser():
     md = textwrap.dedent(
         """
-        ```python
+        `````python
         # out.py
         x = 1
-        ```
+        `````
         
-        ```rust
+        ````rust
         // out.rs
         let x = 1;
-        ```
+        ````
         """
     )
     expected = [

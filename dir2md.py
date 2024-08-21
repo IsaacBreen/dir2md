@@ -56,7 +56,7 @@ def comment_prefix_for_language(language: str) -> str:
     return ""
 
 
-def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above") -> list[TextFile]:
+def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above", ignore_missing_path: bool = False) -> list[TextFile]:
     def _find_path_above(text: str) -> str:
         lines = text.splitlines()
         if lines and path_replacement_field.format(lines[-1].strip()):
@@ -100,7 +100,25 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
                     above_text = lines[start - 1]
                     path = _find_path_above(above_text)
             if not path:
-                raise ValueError(f"Could not find a path for code block starting at line {start + 1}")
+                if ignore_missing_path:
+                    continue
+                context_above = lines[max(0, start - 3):start]
+                context_below = lines[i:min(len(lines), i + 3)]
+                error_message = f"Could not find a path for code block starting at line {start + 1}.\n"
+                error_message += f"Expected a commented path like this:\n"
+                error_message += f"```diff\n"
+                error_message += f"- {lines[start-1]}\n" if start > 0 else ""
+                error_message += f"+ {comment_prefix_for_language(language)} {path_replacement_field.format('path/to/file')}\n"
+                error_message += f"```\n"
+                error_message += f"Context:\n"
+                error_message += f"```\n"
+                error_message += f"{''.join(context_above)}\n"
+                error_message += f"{lines[start]}\n"
+                error_message += f"{code}\n"
+                error_message += f"{lines[i-1]}\n"
+                error_message += f"{''.join(context_below)}\n"
+                error_message += f"```"
+                raise ValueError(error_message)
 
             code_blocks.append(TextFile(text=code, path=path))
         else:
@@ -142,9 +160,10 @@ def dir2md(
 @click.option('--path-location', default="above", type=click.Choice(['above', 'below']), help='The location of the file path relative to the code block.')
 @click.option('--paste', is_flag=True, help='Read the markdown text from the clipboard.')
 @click.option('--path', type=click.Path(exists=True), help='Read the markdown text from a file.')
+@click.option('--ignore-missing-path', is_flag=True, help='Ignore code blocks without a path.')
 def md2dir(
         output_dir: str, yes: bool, path_replacement_field: str,
-        path_location: Literal["above", "below"], paste: bool, path: str
+        path_location: Literal["above", "below"], paste: bool, path: str, ignore_missing_path: bool
 ) -> None:
     """Converts a markdown document to a directory of files."""
     if paste and path:
@@ -158,13 +177,13 @@ def md2dir(
         with open(path, 'r') as f:
             text = f.read()
 
-    save_dir(files=list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location)),
+    save_dir(files=list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location, ignore_missing_path=ignore_missing_path)),
              output_dir=output_dir, yes=yes)
 
 
 def md2dir_save(text: str, output_dir: str, yes: bool = False, path_replacement_field: str = "{}",
-                path_location: Literal["above", "below"] = "above") -> None:
-    save_dir(files=list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location)),
+                path_location: Literal["above", "below"] = "above", ignore_missing_path: bool = False) -> None:
+    save_dir(files=list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location, ignore_missing_path=ignore_missing_path)),
              output_dir=output_dir, yes=yes)
 
 

@@ -127,7 +127,7 @@ def dir2md(
 
 @click.command()
 @click.argument('text', type=click.STRING)
-@click.option('--output-dir', required=True, help='The directory to output the files to.')
+@click.option('--output-dir', default=".", help='The directory to output the files to.')
 @click.option('--yes', is_flag=True, help='Automatically answer yes to all prompts.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
 @click.option('--path-location', default="above", type=click.Choice(['above', 'below']), help='The location of the file path relative to the code block.')

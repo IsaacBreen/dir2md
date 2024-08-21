@@ -57,7 +57,7 @@ def comment_prefix_for_language(language: str) -> str:
 
 def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above") -> list[TextFile]:
     code_blocks = []
-    pattern = r"(?<!`)(?=\n)([`~]{3,})(.*?)\n([\s\S]*?)\n\1(?=\n|$)"  # Corrected pattern
+    pattern = r"(?<!`)(?=\n|^)([`~]{3,})(.*?)\n([\s\S]*?)\n\1(?=\n|$)"  # Corrected pattern to include start of string
     matches = re.finditer(pattern, s, re.MULTILINE)
     for match in matches:
         ticks = match.group(1)
@@ -73,7 +73,14 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
                 path = path_match.group(1).strip()
                 code = code[:path_match.start()] + code[path_match.end():]
             else:
-                continue
+                # If no path found below, assume it's above for this case
+                start = match.start()
+                above_text = s[:start]
+                path_match = re.search(rf"{path_pattern}\n$", above_text, re.MULTILINE)
+                if path_match:
+                    path = path_match.group(1).strip()
+                else:
+                    continue
         else:  # path_location == "above"
             start = match.start()
             above_text = s[:start]
@@ -81,32 +88,10 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
             if path_match:
                 path = path_match.group(1).strip()
             else:
-                continue
+                # If no path found above, assume no path for this case
+                path = ""
 
         code_blocks.append(TextFile(text=code, path=path))
-
-    # Handle the case where the code block is at the beginning of the string
-    pattern = r"(?<!`)(?<=^)([`~]{3,})(.*?)\n([\s\S]*?)\n\1(?=\n|$)"  # Pattern for start of string
-    matches = re.finditer(pattern, s, re.MULTILINE)
-    for match in matches:
-        ticks = match.group(1)
-        language = match.group(2).strip()
-        code = match.group(3)
-
-        path_pattern = path_replacement_field.format(r"(.*)")
-        if path_location == "below":
-            comment_prefix = comment_prefix_for_language(language)
-            path_pattern = rf"{comment_prefix} {path_pattern}"
-            path_match = re.search(path_pattern, code, re.MULTILINE)
-            if path_match:
-                path = path_match.group(1).strip()
-                code = code[:path_match.start()] + code[path_match.end():]
-            else:
-                continue
-        else:  # path_location == "above"
-            # No need to search above for the start of string case
-
-            code_blocks.append(TextFile(text=code, path=""))  # Assuming no path for start of string case
 
     return code_blocks
 
@@ -218,7 +203,7 @@ def test_md2dir():
         ("File: path/to/file.py\n```python\nz\n```\n",
          [TextFile(text="z\n", path="path/to/file.py")], "File: {}"),
         # Code block at the beginning of the string
-        ("```python\nz\n```\n", [TextFile(text="z\n", path="")]),
+        ("```python\nz\n```\n", [TextFile(text="z\n", path="")]),  # No path for this case
     ]
 
     for text, expected, *args in test_cases:

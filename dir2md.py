@@ -23,15 +23,16 @@ class TextFile(NamedTuple):
 def default_formatter(text_file: TextFile) -> str:
     r = ""
     # Yield the relative path to the file as a comment
-    r += f"{text_file.path}\n"
+    r += f"{text_file.path}\n\n"
     # Yield the code block
     # Decide how many ticks to use
     ticks = "```"
     while re.search(rf"\n\s*{ticks}", text_file.text):
         ticks += "`"
-    r += ticks + "\n"
+    language = infer_language(text_file.path)
+    r += f"{ticks}{language}\n"
     r += text_file.text
-    r += ticks + "\n\n"
+    r += f"{ticks}\n\n"
     return r
 
 
@@ -66,11 +67,10 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
     def _find_path_below(code: str, language: str) -> tuple[str, str]:
         comment_prefix = comment_prefix_for_language(language)
         path_pattern = rf"{comment_prefix} {path_replacement_field.format(r'(.*)')}"
-        # Match only at the beginning of the code block
         path_match = re.match(path_pattern, code)
         if path_match:
             path = path_match.group(1).strip()
-            code = code[path_match.end():]
+            code = code[path_match.end():].lstrip()
             return path, code
         return "", code
 
@@ -78,7 +78,6 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
     pattern = r"(?<!`)(?=\n|^)([`~]{3,})(.*?)\n([\s\S]*?)\n\1(?=\n|$)"
     matches = re.finditer(pattern, s, re.MULTILINE)
     for match in matches:
-        ticks = match.group(1)
         language = match.group(2).strip()
         code = match.group(3)
 
@@ -87,16 +86,12 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
 
         path = ""
         if path_location == "above":
-            # Try above first
             path = _find_path_above(above_text)
             if not path:
-                # If not found above, try below
                 path, code = _find_path_below(code, language)
         else:  # path_location == "below"
-            # Try below first
             path, code = _find_path_below(code, language)
             if not path:
-                # If not found below, try above
                 path = _find_path_above(above_text)
 
         if not code.endswith("\n"):

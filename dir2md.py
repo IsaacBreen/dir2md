@@ -15,6 +15,7 @@ import pytest
 # Add color codes
 RED = "\033[91m"
 YELLOW = "\033[93m"
+GREEN = "\033[92m"
 RESET = "\033[0m"
 
 
@@ -88,17 +89,17 @@ def default_parser(
 
         error_message += f"    | {YELLOW}Option 1: Add a commented path above the code block start{RESET}\n"
         error_message += f"    |\n"
-        error_message += f"{start_line}   | {path_replacement_field} {YELLOW}<--- Add a path here{RESET}\n"
-        error_message += f"{start_line + 1} | ```python\n"
-        error_message += f"{start_line + 2} | {code_block.splitlines()[0]}\n"
-        error_message += f"{start_line + 3} | ```\n\n"
+        error_message += f"{GREEN}+{RESET} {start_line}   | {path_replacement_field} {YELLOW}<--- Add a path here{RESET}\n"
+        error_message += f"  {start_line + 1} | ```python\n"
+        error_message += f"  {start_line + 2} | {code_block.splitlines()[0]}\n"
+        error_message += f"  {start_line + 3} | ```\n\n"
 
         error_message += f"    | {YELLOW}Option 2: Add a commented path below the code block start{RESET}\n"
         error_message += f"    |\n"
-        error_message += f"{start_line + 1} | ```python\n"
-        error_message += f"{start_line + 2} | # {path_replacement_field} {YELLOW}<--- Add a path here as a comment{RESET}\n"
-        error_message += f"{start_line + 3} | {code_block.splitlines()[0]}\n"
-        error_message += f"{start_line + 4} | ```\n"
+        error_message += f"  {start_line + 1} | ```python\n"
+        error_message += f"{GREEN}+{RESET} {start_line + 2} | # {path_replacement_field} {YELLOW}<--- Add a path here as a comment{RESET}\n"
+        error_message += f"  {start_line + 3} | {code_block.splitlines()[0]}\n"
+        error_message += f"  {start_line + 4} | ```\n"
 
         return error_message
 

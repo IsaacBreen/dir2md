@@ -57,46 +57,56 @@ def comment_prefix_for_language(language: str) -> str:
 
 
 def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above") -> list[TextFile]:
-    def _find_path_above(text: str) -> str:
+    def _find_path_above(lines: list[str], i: int) -> str:
         path_pattern = path_replacement_field.format(r"(.*)")
-        path_match = re.search(rf"{path_pattern}\n$", text, re.MULTILINE)
-        if path_match:
-            return path_match.group(1).strip()
+        if i > 0 and re.match(path_pattern, lines[i - 1]):
+            return lines[i - 1].strip()[len(path_replacement_field.format("")):]
         return ""
 
-    def _find_path_below(code: str, language: str) -> tuple[str, str]:
+    def _find_path_below(lines: list[str], i: int, language: str) -> tuple[str, int]:
         comment_prefix = comment_prefix_for_language(language)
-        path_pattern = rf"^{comment_prefix} {path_replacement_field.format(r'(.*)')}"
-        path_match = re.match(path_pattern, code)
-        if path_match:
-            path = path_match.group(1).strip()
-            code = code[path_match.end():].lstrip()
-            return path, code
-        return "", code
+        path_pattern = rf"{comment_prefix} {path_replacement_field.format(r'(.*)')}"
+        if i + 1 < len(lines) and re.match(path_pattern, lines[i + 1]):
+            path = lines[i + 1][len(f"{comment_prefix} {path_replacement_field.format('')}"):].strip()
+            return path, i + 2
+        return "", i + 1
 
     code_blocks = []
-    pattern = re.compile(r"^(```+)(.*?)\n((?:(?!(\1(\n|$)))[^\n]*\n)*)\1(\n|$)", re.MULTILINE)
-    matches = pattern.finditer(s)
-    for match in matches:
-        language = match.group(2).strip()
-        code = match.group(3)
+    lines = s.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("```"):
+            ticks = line
+            language = line[len(ticks):].strip()
+            code = []
+            i += 1
+            while i < len(lines) and not lines[i].startswith(ticks):
+                code.append(lines[i])
+                i += 1
+            if i < len(lines) and lines[i].startswith(ticks):
+                i += 1
 
-        start = match.start()
-        above_text = s[:start]
+            if path_location == "above":
+                path = _find_path_above(lines, i - len(code) - 1)
+                if not path:
+                    path, new_i = _find_path_below(lines, i - len(code) - 1, language)
+                    if path:
+                        code = lines[new_i:i - 1]
+            else:  # path_location == "below"
+                path, new_i = _find_path_below(lines, i - len(code) - 1, language)
+                if not path:
+                    path = _find_path_above(lines, i - len(code) - 1)
+                else:
+                    code = lines[new_i:i - 1]
 
-        if path_location == "above":
-            path = _find_path_above(above_text)
-            if not path:
-                path, code = _find_path_below(code, language)
-        else:  # path_location == "below"
-            path, code = _find_path_below(code, language)
-            if not path:
-                path = _find_path_above(above_text)
+            code = "\n".join(code)
+            if not code.endswith("\n"):
+                code += "\n"
 
-        if not code.endswith("\n"):
-            code += "\n"
-
-        code_blocks.append(TextFile(text=code, path=path))
+            code_blocks.append(TextFile(text=code, path=path))
+        else:
+            i += 1
 
     return code_blocks
 
@@ -205,10 +215,10 @@ def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
 def test_default_parser():
     md = textwrap.dedent(
         """
-        `````python
+        ```python
         # out.py
         x = 1
-        `````
+        ```
         
         ```rust
         // out.rs

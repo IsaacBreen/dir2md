@@ -83,22 +83,22 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
         error_message = f"{RED}error: Could not find a path for code block{RESET}\n"
         error_message += f"   --> <path/to/file>:{start_line + 1}:6\n"
         error_message += f"    |\n"
-        error_message += f"{start_line + 1} | {code_block.splitlines()[0]}\n"
-        error_message += f"    | {RED}^{RESET}{RED}^{RESET}{RED}^{RESET}{RED}^{RESET}{RED}^ {YELLOW}Expected a commented path above or below the code block:{RESET}\n\n"
+        error_message += f"{start_line + 1: >3} | {code_block.splitlines()[0]}\n"
+        error_message += f"    | {RED}^^^^^{RESET} {YELLOW}Expected a commented path above or below the code block:{RESET}\n\n"
 
         error_message += f"    | {YELLOW}Option 1: Add a commented path above the code block start{RESET}\n"
         error_message += f"    |\n"
         error_message += f"{GREEN}+{RESET} {start_line: >2} | {path_replacement_field} {YELLOW}<--- Add a path here{RESET}\n"
-        error_message += f"      {start_line + 1} | ```python\n"
-        error_message += f"      {start_line + 2} | {code_block.splitlines()[0]}\n"
-        error_message += f"      {start_line + 3} | ```\n\n"
+        error_message += f" {start_line + 1: >3} | ```python\n"
+        error_message += f" {start_line + 2: >3} | {code_block.splitlines()[0]}\n"
+        error_message += f" {start_line + 3: >3} | ```\n\n"
 
         error_message += f"    | {YELLOW}Option 2: Add a commented path below the code block start{RESET}\n"
         error_message += f"    |\n"
-        error_message += f"      {start_line + 1} | ```python\n"
+        error_message += f" {start_line + 1: >3} | ```python\n"
         error_message += f"{GREEN}+{RESET} {start_line + 2: >2} | # {path_replacement_field} {YELLOW}<--- Add a path here as a comment{RESET}\n"
-        error_message += f"      {start_line + 3} | {code_block.splitlines()[0]}\n"
-        error_message += f"      {start_line + 4} | ```\n"
+        error_message += f" {start_line + 3: >3} | {code_block.splitlines()[0]}\n"
+        error_message += f" {start_line + 4: >3} | ```\n"
 
         return error_message
 

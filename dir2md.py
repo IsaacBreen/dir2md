@@ -89,16 +89,18 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
 
             code = "\n".join(lines[start + 1:i - 1])
 
-            above_text = lines[start - 1] if start > 0 else ""
-
-            if path_location == "above":
+            if path_location == "above" and start > 0:
+                above_text = lines[start - 1]
                 path = _find_path_above(above_text)
                 if not path:
                     path, code = _find_path_below(code, language)
             else:  # path_location == "below"
                 path, code = _find_path_below(code, language)
-                if not path:
+                if not path and start > 0:
+                    above_text = lines[start - 1]
                     path = _find_path_above(above_text)
+            if not path:
+                raise ValueError(f"Could not find a path for code block starting at line {start + 1}")
 
             code_blocks.append(TextFile(text=code, path=path))
         else:

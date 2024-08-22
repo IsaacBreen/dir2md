@@ -26,10 +26,11 @@ class TextFile(NamedTuple):
     end: int = -1
 
 
-def default_formatter(text_file: TextFile) -> str:
+def default_formatter(text_file: TextFile, path_location: Literal["above", "below"]) -> str:
     r = ""
-    # Yield the relative path to the file as a comment
-    r += f"{text_file.path}\n\n"
+    if path_location == "above":
+        # Yield the relative path to the file as a comment
+        r += f"{text_file.path}\n\n"
     # Yield the code block
     # Decide how many ticks to use
     ticks = "```"
@@ -37,6 +38,11 @@ def default_formatter(text_file: TextFile) -> str:
         ticks += "`"
     language = infer_language(text_file.path)
     r += f"{ticks}{language}\n"
+    if path_location == "below":
+        comment_prefix = comment_prefix_for_language(language)
+        l = f"{comment_prefix} {text_file.path}\n"
+        if not text_file.text.startswith(l):
+            r += l
     r += text_file.text
     r += f"{ticks}\n\n"
     return r
@@ -152,7 +158,7 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
 @click.argument('files', nargs=-1)
 @click.option('--no-glob', is_flag=True, help='Disable globbing for file arguments.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option('--path-location', default="above", type=click.Choice(['above', 'below']),
+@click.option('--path-location', default="below", type=click.Choice(['above', 'below']),
               help='The location of the file path relative to the code block.')
 def dir2md(
         files: str, no_glob: bool,
@@ -171,8 +177,7 @@ def dir2md(
                 code = code_file.read()
                 if not code.endswith("\n"):
                     code += "\n"
-            language = infer_language(file_path)
-            click.echo(''.join(default_formatter(TextFile(path=file_path, text=code)).splitlines()))
+            click.echo(default_formatter(TextFile(path=file_path, text=code), path_location=path_location))
 
 
 @click.command()
@@ -279,7 +284,7 @@ def test_default_parser():
     (TextFile(text="let x = 1;\n", path="out.rs"), "out.rs\n\n```rust\nlet x = 1;\n```\n\n"),
 ])
 def test_default_formatter(text_file: TextFile, expected: str) -> None:
-    assert default_formatter(text_file) == expected
+    assert default_formatter(text_file, path_location="above") == expected
 
 
 if __name__ == "__main__":

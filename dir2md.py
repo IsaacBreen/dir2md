@@ -165,6 +165,7 @@ def dir2md(
         path_replacement_field: str, path_location: Literal["above", "below"]
 ) -> None:
     """Converts a directory of files to a markdown document."""
+    output = []
     for file_or_pattern in files:
         if not no_glob:
             file_paths = glob.glob(file_or_pattern)
@@ -177,7 +178,10 @@ def dir2md(
                 code = code_file.read()
                 if not code.endswith("\n"):
                     code += "\n"
-            click.echo(default_formatter(TextFile(path=file_path, text=code), path_location=path_location))
+            output.append(default_formatter(TextFile(path=file_path, text=code), path_location=path_location))
+
+    # Join all formatted outputs and remove trailing newlines
+    click.echo(("".join(output)).rstrip())
 
 
 @click.command()

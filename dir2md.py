@@ -11,6 +11,7 @@ from typing import NamedTuple
 import click
 import pyperclip
 import pytest
+import tiktoken
 
 # Add color codes
 RED = "\033[91m"
@@ -18,12 +19,14 @@ YELLOW = "\033[93m"
 GREEN = "\033[92m"
 RESET = "\033[0m"
 
+enc = tiktoken.encoding_for_model("gpt-4o")
 
 class TextFile(NamedTuple):
     text: str
     path: str
     start: int = 0
     end: int = -1
+    token_count: int = 0
 
 
 def default_formatter(text_file: TextFile, path_location: Literal["above", "below"]) -> str:
@@ -37,7 +40,8 @@ def default_formatter(text_file: TextFile, path_location: Literal["above", "belo
     while re.search(rf"\n\s*{ticks}", text_file.text):
         ticks += "`"
     language = infer_language(text_file.path)
-    r += f"{ticks}{language}\n"
+    # Add the custom attribute for the token count
+    r += f"{ticks}{language} tokens={text_file.token_count}\n"
     if path_location == "below":
         comment_prefix = comment_prefix_for_language(language)
         l = f"{comment_prefix} {text_file.path}\n"
@@ -144,7 +148,8 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
                 if not ignore_missing_path:
                     raise ValueError(_format_error_message(start, code, path_replacement_field))
             else:
-                code_blocks.append(TextFile(text=code, path=path))
+                token_count = len(enc.encode(code))
+                code_blocks.append(TextFile(text=code, path=path, token_count=token_count))
         else:
             i += 1
 
@@ -178,7 +183,8 @@ def dir2md(
                 code = code_file.read()
                 if not code.endswith("\n"):
                     code += "\n"
-            output.append(default_formatter(TextFile(path=file_path, text=code), path_location=path_location))
+            token_count = len(enc.encode(code))
+            output.append(default_formatter(TextFile(path=file_path, text=code, token_count=token_count), path_location=path_location))
 
     # Join all formatted outputs and remove trailing newlines
     click.echo(("".join(output)).rstrip())

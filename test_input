@@ -1,8 +1,8 @@
 Okay, I'll modify the provided Python code to use the OpenAI API instead of the Gemini API.
 
 
-```python
-# src/gemini_example.py
+```python tokens=265
+# gemini_example.py
 import os
 import openai
 
@@ -11,24 +11,32 @@ openai.api_key = os.environ["OPENAI_API_KEY"]
 # Create the model
 model_engine = "gpt-3.5-turbo"
 
+# Load the system prompt
 with open("system_prompt.md", "r") as f:
     system_prompt = f.read()
 
-messages = [
-    {"role": "system", "content": system_prompt},
-]
-
+# Send the message to the model
 response = openai.ChatCompletion.create(
     model=model_engine,
-    messages=messages,
-    temperature=0,
-    max_tokens=8192,
-    n=1,
-    stop=None,
+    messages=[
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": "INSERT_INPUT_HERE"},
+    ],
 )
 
 print(response.choices[0].message.content)
 ```
 
 
-I've updated the code to use the OpenAI API instead of the Gemini API. Here's a breakdown of the changes:
+## Updated Progress Report
+
+```json
+{
+  "progress_report": {
+    "chunks": [
+      {
+        "chunk_id": "chunk_1",
+        "files": [
+          {
+            "file_path": "gemini_example.py",
+            "status": "completed"

@@ -165,7 +165,7 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
 @click.option('--path-location', default="below", type=click.Choice(['above', 'below']),
               help='The location of the file path relative to the code block.')
-def dir2md(
+def dir2md_cli(
         files: str, no_glob: bool,
         path_replacement_field: str, path_location: Literal["above", "below"]
 ) -> None:
@@ -190,6 +190,34 @@ def dir2md(
     click.echo(("".join(output)).rstrip())
 
 
+def dir2md(
+        files: list[str] | str, no_glob: bool = False,
+        path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "below"
+) -> str:
+    """Converts a directory of files to a markdown document."""
+    if isinstance(files, str):
+        files = [files]
+
+    output = []
+    for file_or_pattern in files:
+        if not no_glob:
+            file_paths = glob.glob(file_or_pattern)
+        else:
+            file_paths = [file_or_pattern]
+        for file_path in file_paths:
+            if not os.path.isfile(file_path):
+                raise FileNotFoundError(f"File {file_path} not found")
+            with open(file_path, "r") as code_file:
+                code = code_file.read()
+                if not code.endswith("\n"):
+                    code += "\n"
+            token_count = len(enc.encode(code))
+            output.append(default_formatter(TextFile(path=file_path, text=code, token_count=token_count), path_location=path_location))
+
+    # Join all formatted outputs and remove trailing newlines
+    return ("".join(output)).rstrip()
+
+
 @click.command()
 @click.option('--output-dir', default=".", help='The directory to output the files to.')
 @click.option('--yes', is_flag=True, help='Automatically answer yes to all prompts.')
@@ -199,7 +227,7 @@ def dir2md(
 @click.option('--paste', is_flag=True, help='Read the markdown text from the clipboard.')
 @click.option('--path', type=click.Path(exists=True), help='Read the markdown text from a file.')
 @click.option('--ignore-missing-path', is_flag=True, help='Ignore code blocks without a specified path.')
-def md2dir(
+def md2dir_cli(
         output_dir: str, yes: bool, path_replacement_field: str,
         path_location: Literal["above", "below"], paste: bool, path: str, ignore_missing_path: bool
 ) -> None:
@@ -220,9 +248,13 @@ def md2dir(
              output_dir=output_dir, yes=yes)
 
 
-def md2dir_save(text: str, output_dir: str, yes: bool = False, path_replacement_field: str = "{}",
-                path_location: Literal["above", "below"] = "above") -> None:
-    save_dir(files=list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location)),
+def md2dir(
+        text: str, output_dir: str, yes: bool = False, path_replacement_field: str = "{}",
+        path_location: Literal["above", "below"] = "above", ignore_missing_path: bool = False
+) -> None:
+    """Converts a markdown document to a directory of files."""
+    save_dir(files=list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location,
+                                       ignore_missing_path=ignore_missing_path)),
              output_dir=output_dir, yes=yes)
 
 
@@ -299,6 +331,6 @@ def test_default_formatter(text_file: TextFile, expected: str) -> None:
 
 if __name__ == "__main__":
     cli = click.Group()
-    cli.add_command(dir2md)
-    cli.add_command(md2dir)
+    cli.add_command(dir2md_cli)
+    cli.add_command(md2dir_cli)
     cli()

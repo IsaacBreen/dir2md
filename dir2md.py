@@ -124,7 +124,12 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
         if line.startswith("```"):
             start = i
             ticks = line[:len(line) - len(line.lstrip("`"))]
-            language = line[len(ticks):].strip()
+            rest = line[len(ticks):].strip()
+            attributes = rest.split(" ")
+            if len(attributes) > 1:
+                language = attributes[0]
+            else:
+                language = ""
             i += 1
             while i < len(lines) and not lines[i].startswith(ticks):
                 i += 1
@@ -327,6 +332,11 @@ def test_default_parser():
 ])
 def test_default_formatter(text_file: TextFile, expected: str) -> None:
     assert default_formatter(text_file, path_location="above") == expected
+
+
+def test_with_test_input_file():
+    test_input = open("test_input", "r").read()
+    print(md2dir(test_input, output_dir="test_output", yes=True))
 
 
 if __name__ == "__main__":

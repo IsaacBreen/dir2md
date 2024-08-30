@@ -43,7 +43,7 @@ def default_formatter(text_file: TextFile, path_location: Literal["above", "belo
         ticks += "`"
     language = infer_language(text_file.path)
     # Add the custom attribute for the token count
-    r += f"{ticks}{language} tokens={text_file.token_count * token_fudge_factor}\n"
+    r += f"{ticks}{language} tokens={int(text_file.token_count * token_fudge_factor)}\n"
     if path_location == "below":
         comment_prefix = comment_prefix_for_language(language)
         l = f"{comment_prefix} {text_file.path}\n"

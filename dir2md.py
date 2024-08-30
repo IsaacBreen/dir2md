@@ -5,6 +5,7 @@ import os
 import pathlib
 import re
 import textwrap
+import uuid
 from typing import Literal
 from typing import NamedTuple
 
@@ -83,7 +84,12 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
     def _find_path_below(code: str, language: str) -> tuple[str, str]:
         comment_prefix = comment_prefix_for_language(language)
         lines = code.splitlines()
-        if lines and lines[0].startswith(f"{comment_prefix} {path_replacement_field.format('')}"):
+        random_string = str(uuid.uuid4())
+        try:
+            path_replacement_field_prefix = path_replacement_field.format(random_string).split(random_string)[0]
+        except IndexError:
+            path_replacement_field_prefix = path_replacement_field
+        if lines and lines[0].startswith(f"{comment_prefix} {path_replacement_field_prefix}"):
             path = lines[0][len(comment_prefix) + 1:].strip()
             code = "\n".join(lines[1:])
             return path, code
@@ -126,7 +132,7 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
             ticks = line[:len(line) - len(line.lstrip("`"))]
             rest = line[len(ticks):].strip()
             attributes = rest.split(" ")
-            if len(attributes) > 1:
+            if len(attributes) > 0:
                 language = attributes[0]
             else:
                 language = ""

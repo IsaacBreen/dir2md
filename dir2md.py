@@ -21,6 +21,7 @@ GREEN = "\033[92m"
 RESET = "\033[0m"
 
 enc = tiktoken.encoding_for_model("gpt-4o")
+token_fudge_factor = 1.3
 
 class TextFile(NamedTuple):
     text: str
@@ -42,7 +43,7 @@ def default_formatter(text_file: TextFile, path_location: Literal["above", "belo
         ticks += "`"
     language = infer_language(text_file.path)
     # Add the custom attribute for the token count
-    r += f"{ticks}{language} tokens={text_file.token_count}\n"
+    r += f"{ticks}{language} tokens={text_file.token_count * token_fudge_factor}\n"
     if path_location == "below":
         comment_prefix = comment_prefix_for_language(language)
         l = f"{comment_prefix} {text_file.path}\n"

@@ -21,7 +21,7 @@ GREEN = "\033[92m"
 RESET = "\033[0m"
 
 enc = tiktoken.encoding_for_model("gpt-4o")
-token_fudge_factor = 1.3
+token_fudge_factor = 1.5
 
 class TextFile(NamedTuple):
     text: str
@@ -171,17 +171,20 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
     return code_blocks
 
 
-@click.command()
-@click.argument('files', nargs=-1)
-@click.option('--no-glob', is_flag=True, help='Disable globbing for file arguments.')
+@click.command(name="dir2md")
+@click.argument('files', nargs=-1, required=True)
+@click.option('--no-glob', is_flag=True, default=True, help='Disable globbing for file arguments.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
 @click.option('--path-location', default="below", type=click.Choice(['above', 'below']),
               help='The location of the file path relative to the code block.')
 def dir2md_cli(
-        files: str, no_glob: bool,
+        files: list[str] | str, no_glob: bool,
         path_replacement_field: str, path_location: Literal["above", "below"]
 ) -> None:
     """Converts a directory of files to a markdown document."""
+    if isinstance(files, str):
+        files = [files]
+
     output = []
     for file_or_pattern in files:
         if not no_glob:
@@ -214,8 +217,10 @@ def dir2md(
     for file_or_pattern in files:
         if not no_glob:
             file_paths = glob.glob(file_or_pattern)
-        else:
+        elif isinstance(file_or_pattern, str):
             file_paths = [file_or_pattern]
+        else:
+            file_paths = file_or_pattern
         for file_path in file_paths:
             if not os.path.isfile(file_path):
                 raise FileNotFoundError(f"File {file_path} not found")
@@ -230,7 +235,7 @@ def dir2md(
     return ("".join(output)).rstrip()
 
 
-@click.command()
+@click.command(name="md2dir")
 @click.option('--output-dir', default=".", help='The directory to output the files to.')
 @click.option('--yes', is_flag=True, help='Automatically answer yes to all prompts.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
@@ -238,7 +243,7 @@ def dir2md(
               help='The location of the file path relative to the code block.')
 @click.option('--paste', is_flag=True, help='Read the markdown text from the clipboard.')
 @click.option('--path', type=click.Path(exists=True), help='Read the markdown text from a file.')
-@click.option('--ignore-missing-path', is_flag=True, help='Ignore code blocks without a specified path.')
+@click.option('--ignore-missing-path', is_flag=True, default=False, help='Ignore code blocks without a specified path.')
 def md2dir_cli(
         output_dir: str, yes: bool, path_replacement_field: str,
         path_location: Literal["above", "below"], paste: bool, path: str, ignore_missing_path: bool

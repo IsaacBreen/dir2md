@@ -17,5 +17,5 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
-dir2md = "dir2md:dir2md"
-md2dir = "dir2md:md2dir"
+dir2md = "dir2md:dir2md_cli"
+md2dir = "dir2md:md2dir_cli"

@@ -6,6 +6,7 @@ import pathlib
 import re
 import textwrap
 import uuid
+from dataclasses import dataclass
 from typing import Literal
 from typing import NamedTuple
 
@@ -13,6 +14,8 @@ import click
 import pyperclip
 import pytest
 import tiktoken
+
+# TODO: get rid of the handling of unclosed blocks. It's not worth the added complexity. Newer models will have much larger output limits or will be able to continue generating incomplete messages (or 'prefill', as Anthropic calls it).
 
 # Add color codes
 RED = "\033[91m"
@@ -74,8 +77,14 @@ def comment_prefix_for_language(language: str) -> str:
     return ""
 
 
-def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above",
-                   ignore_missing_path: bool = False) -> list[TextFile]:
+@dataclass
+class ParseResult:
+    code_blocks: list[TextFile]
+    last_code_block_is_unclosed: bool
+
+
+def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "below",
+                   ignore_missing_path: bool = False) -> ParseResult:
     def _find_path_above(text: str) -> str:
         lines = text.splitlines()
         if lines and path_replacement_field.format(lines[-1].strip()):
@@ -122,10 +131,13 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
 
         return error_message
 
+
     code_blocks = []
     lines = s.splitlines()
+    print(f"Parsing {len(lines)} lines")
     i = 0
     missing_path_count = 0
+    last_code_block_is_unclosed = False
     while i < len(lines):
         line = lines[i]
         if line.startswith("```"):
@@ -138,9 +150,12 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
             else:
                 language = ""
             i += 1
-            while i < len(lines) and not lines[i].startswith(ticks):
-                i += 1
-            if i < len(lines) and lines[i].startswith(ticks):
+            while True:
+                if i >= len(lines):
+                    break
+                if lines[i].startswith(ticks):
+                    i += 1
+                    break
                 i += 1
 
             code = "\n".join(lines[start + 1:i - 1])
@@ -150,7 +165,7 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
                 path = _find_path_above(above_text)
                 if not path:
                     path, code = _find_path_below(code, language)
-            else:  # path_location == "below"
+            else:
                 path, code = _find_path_below(code, language)
                 if not path and start > 0:
                     above_text = lines[start - 1]
@@ -160,6 +175,8 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
                 if not ignore_missing_path:
                     raise ValueError(_format_error_message(start, code, path_replacement_field))
             else:
+                if i == len(lines) and not lines[i - 1].startswith(ticks):
+                    last_code_block_is_unclosed = True
                 token_count = len(enc.encode(code))
                 code_blocks.append(TextFile(text=code, path=path, token_count=token_count))
         else:
@@ -168,7 +185,7 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
     if missing_path_count > 0 and ignore_missing_path:
         print(f"{YELLOW}Warning: Skipped {missing_path_count} code blocks due to missing paths.{RESET}")
 
-    return code_blocks
+    return ParseResult(code_blocks, last_code_block_is_unclosed)
 
 
 @click.command(name="dir2md")
@@ -239,7 +256,7 @@ def dir2md(
 @click.option('--output-dir', default=".", help='The directory to output the files to.')
 @click.option('--yes', is_flag=True, help='Automatically answer yes to all prompts.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option('--path-location', default="above", type=click.Choice(['above', 'below']),
+@click.option('--path-location', default="below", type=click.Choice(['above', 'below']),
               help='The location of the file path relative to the code block.')
 @click.option('--paste', is_flag=True, help='Read the markdown text from the clipboard.')
 @click.option('--path', type=click.Path(exists=True), help='Read the markdown text from a file.')
@@ -265,22 +282,38 @@ def md2dir_cli(
         path_replacement_field=path_replacement_field,
         path_location=path_location,
         ignore_missing_path=ignore_missing_path
-    )
-    save_dir(files=list(files), output_dir=output_dir, yes=yes)
+    ).code_blocks
+    files = list(files)
+    save_dir(files=files, output_dir=output_dir, yes=yes)
 
 
 def md2dir(
         text: str, output_dir: str, yes: bool = False, path_replacement_field: str = "{}",
-        path_location: Literal["above", "below"] = "above", ignore_missing_path: bool = False
-) -> None:
+        path_location: Literal["above", "below"] = "below", ignore_missing_path: bool = False,
+        on_unclosed: Literal["proceed", "omit_last_line", "skip", "error"] = "omit_last_line"
+) -> ParseResult:
     """Converts a markdown document to a directory of files."""
-    files = default_parser(
+    parse_result = default_parser(
         text,
         path_replacement_field=path_replacement_field,
         path_location=path_location,
         ignore_missing_path=ignore_missing_path
     )
-    save_dir(files=list(files), output_dir=output_dir, yes=yes)
+    if parse_result.last_code_block_is_unclosed:
+        match on_unclosed:
+            case "proceed":
+                pass
+            case "omit_last_line":
+                parse_result.code_blocks[-1].text = "\n".join(parse_result.code_blocks[-1].text.splitlines()[:-1])
+                parse_result.code_blocks[-1].token_count = len(enc.encode(parse_result.code_blocks[-1].text))
+            case "skip":
+                parse_result.code_blocks.pop()
+            case "error":
+                raise ValueError("Last code block is unclosed")
+            case _:
+                raise ValueError(f"Invalid value for on_unclosed: {on_unclosed}")
+    save_dir(files=parse_result.code_blocks, output_dir=output_dir, yes=yes)
+    return parse_result
 
 
 def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
@@ -343,7 +376,7 @@ def test_default_parser():
         TextFile(text="x = 1", path="out.py"),
         TextFile(text="let x = 1;", path="out.rs"),
     ]
-    assert list(default_parser(md)) == expected
+    assert list(default_parser(md).code_blocks) == expected
 
 
 @pytest.mark.parametrize("text_file, expected", [
@@ -351,7 +384,7 @@ def test_default_parser():
     (TextFile(text="let x = 1;\n", path="out.rs"), "out.rs\n\n```rust\nlet x = 1;\n```\n\n"),
 ])
 def test_default_formatter(text_file: TextFile, expected: str) -> None:
-    assert default_formatter(text_file, path_location="above") == expected
+    assert default_formatter(text_file, path_location="below") == expected
 
 
 def test_with_test_input_file():

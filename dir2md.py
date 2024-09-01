@@ -260,9 +260,13 @@ def md2dir_cli(
         with open(path, 'r') as f:
             text = f.read()
 
-    save_dir(files=list(default_parser(text, path_replacement_field=path_replacement_field,
-                                       path_location=path_location, ignore_missing_path=ignore_missing_path)),
-             output_dir=output_dir, yes=yes)
+    files = default_parser(
+        text,
+        path_replacement_field=path_replacement_field,
+        path_location=path_location,
+        ignore_missing_path=ignore_missing_path
+    )
+    save_dir(files=list(files), output_dir=output_dir, yes=yes)
 
 
 def md2dir(
@@ -270,9 +274,13 @@ def md2dir(
         path_location: Literal["above", "below"] = "above", ignore_missing_path: bool = False
 ) -> None:
     """Converts a markdown document to a directory of files."""
-    save_dir(files=list(default_parser(text, path_replacement_field=path_replacement_field, path_location=path_location,
-                                       ignore_missing_path=ignore_missing_path)),
-             output_dir=output_dir, yes=yes)
+    files = default_parser(
+        text,
+        path_replacement_field=path_replacement_field,
+        path_location=path_location,
+        ignore_missing_path=ignore_missing_path
+    )
+    save_dir(files=list(files), output_dir=output_dir, yes=yes)
 
 
 def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:

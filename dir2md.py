@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import glob
 import os
 import pathlib
@@ -15,8 +16,6 @@ import pyperclip
 import pytest
 import tiktoken
 
-# TODO: get rid of the handling of unclosed blocks. It's not worth the added complexity. Newer models will have much larger output limits or will be able to continue generating incomplete messages (or 'prefill', as Anthropic calls it).
-
 # Add color codes
 RED = "\033[91m"
 YELLOW = "\033[93m"
@@ -26,52 +25,29 @@ RESET = "\033[0m"
 enc = tiktoken.encoding_for_model("gpt-4o")
 token_fudge_factor = 1.5
 
-
 class TextFile(NamedTuple):
     text: str
     path: str
     start: int = 0
     end: int = -1
     token_count: int = 0
-    line_ranges: list[slice | int] | None = None
 
 
 def default_formatter(text_file: TextFile, path_location: Literal["above", "below"]) -> str:
     r = ""
     if path_location == "above":
-        # Yield the relative path to the file as a comment
         r += f"{text_file.path}\n\n"
-    # Yield the code block
-    # Decide how many ticks to use
     ticks = "```"
     while re.search(rf"\n\s*{ticks}", text_file.text):
         ticks += "`"
     language = infer_language(text_file.path)
-    # Add the custom attribute for the token count
     r += f"{ticks}{language} tokens={int(text_file.token_count * token_fudge_factor)}\n"
     if path_location == "below":
         comment_prefix = comment_prefix_for_language(language)
         l = f"{comment_prefix} {text_file.path}\n"
         if not text_file.text.startswith(l):
             r += l
-
-    # Apply line ranges if specified
-    if text_file.line_ranges:
-        lines = text_file.text.splitlines()
-        selected_lines = []
-        for rng in text_file.line_ranges:
-            if isinstance(rng, slice):
-                selected_lines.extend(lines[rng])
-            elif isinstance(rng, int):
-                try:
-                    selected_lines.append(lines[rng])
-                except IndexError:
-                    pass  # Ignore out of bounds indexes
-            else:
-                raise TypeError("Line ranges must be slices or integers.")
-        r += "\n".join(selected_lines)
-    else:
-        r += text_file.text
+    r += text_file.text
     r += f"{ticks}\n\n"
     return r
 
@@ -83,7 +59,6 @@ def infer_language(path: str) -> str:
         return "python"
     elif ext == ".rs":
         return "rust"
-    # Add more mappings as needed
     return ""
 
 
@@ -92,7 +67,6 @@ def comment_prefix_for_language(language: str) -> str:
         return "#"
     elif language == "rust":
         return "//"
-    # Add more mappings as needed
     return ""
 
 
@@ -102,9 +76,8 @@ class ParseResult:
     last_code_block_is_unclosed: bool
 
 
-def default_parser(
-        s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "below",
-        ignore_missing_path: bool = False) -> ParseResult:
+def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "below",
+                   ignore_missing_path: bool = False) -> ParseResult:
     def _find_path_above(text: str) -> str:
         lines = text.splitlines()
         if lines and path_replacement_field.format(lines[-1].strip()):
@@ -126,9 +99,6 @@ def default_parser(
         return "", code
 
     def _format_error_message(start_line: int, code_block: str, path_replacement_field: str) -> str:
-        # TODO: fix this
-        #  - don't hardcode the language name
-        #  - pass this function the full lines and let it choose what to show
         error_message = f"{RED}error: Could not find a path for code block{RESET}\n"
         error_message += f"Error at line {start_line + 1}:6\n"
         error_message += f"     |\n"
@@ -164,10 +134,7 @@ def default_parser(
             ticks = line[:len(line) - len(line.lstrip("`"))]
             rest = line[len(ticks):].strip()
             attributes = rest.split(" ")
-            if len(attributes) > 0:
-                language = attributes[0]
-            else:
-                language = ""
+            language = attributes[0] if attributes else ""
             i += 1
             while True:
                 if i >= len(lines):
@@ -207,14 +174,61 @@ def default_parser(
     return ParseResult(code_blocks, last_code_block_is_unclosed)
 
 
+def parse_line_range(file_path: str) -> tuple[str, list[slice | int]]:
+    """
+    Parse the file path and extract the line range if specified in square brackets.
+    Returns the file path and a list of slices or integers representing the line ranges.
+    """
+    match = re.search(r"\[(.*?)\]$", file_path)
+    if match:
+        range_str = match.group(1)
+        file_path = file_path[:match.start()]  # Remove the range part from the file path
+        try:
+            # Parse the range string into a list of slices or integers
+            ranges = ast.literal_eval(f"[{range_str}]")
+            parsed_ranges = []
+            for r in ranges:
+                if isinstance(r, int):
+                    parsed_ranges.append(r)
+                elif isinstance(r, tuple) and len(r) == 2:
+                    parsed_ranges.append(slice(*r))
+                else:
+                    raise ValueError(f"Invalid range format: {r}")
+            return file_path, parsed_ranges
+        except Exception as e:
+            raise ValueError(f"Error parsing line range: {range_str}. {e}")
+    return file_path, []
+
+
+def read_file_with_ranges(file_path: str, line_ranges: list[slice | int]) -> str:
+    """
+    Read the file and return only the lines specified by the line_ranges.
+    """
+    with open(file_path, "r") as f:
+        lines = f.readlines()
+
+    if not line_ranges:
+        return "".join(lines)  # No range specified, return the whole file
+
+    selected_lines = []
+    for r in line_ranges:
+        if isinstance(r, int):
+            if r < 0:
+                r = len(lines) + r  # Handle negative indices
+            if 0 <= r < len(lines):
+                selected_lines.append(lines[r])
+        elif isinstance(r, slice):
+            selected_lines.extend(lines[r])
+
+    return "".join(selected_lines)
+
+
 @click.command(name="dir2md")
 @click.argument('files', nargs=-1, required=True)
 @click.option('--no-glob', is_flag=True, default=True, help='Disable globbing for file arguments.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option(
-    '--path-location', default="below", type=click.Choice(['above', 'below']),
-    help='The location of the file path relative to the code block.'
-    )
+@click.option('--path-location', default="below", type=click.Choice(['above', 'below']),
+              help='The location of the file path relative to the code block.')
 def dir2md_cli(
         files: list[str] | str, no_glob: bool,
         path_replacement_field: str, path_location: Literal["above", "below"]
@@ -229,13 +243,20 @@ def dir2md_cli(
             file_paths = glob.glob(file_or_pattern)
         else:
             file_paths = [file_or_pattern]
+
         for file_path in file_paths:
+            # Parse the file path and extract line ranges
+            file_path, line_ranges = parse_line_range(file_path)
+
             if not os.path.isfile(file_path):
                 raise FileNotFoundError(f"File {file_path} not found")
-            with open(file_path, "r") as code_file:
-                code = code_file.read()
-                if not code.endswith("\n"):
-                    code += "\n"
+
+            # Read the file with the specified line ranges
+            code = read_file_with_ranges(file_path, line_ranges)
+
+            if not code.endswith("\n"):
+                code += "\n"
+
             token_count = len(enc.encode(code))
             output.append(default_formatter(TextFile(path=file_path, text=code, token_count=token_count), path_location=path_location))
 
@@ -259,44 +280,22 @@ def dir2md(
             file_paths = [file_or_pattern]
         else:
             file_paths = file_or_pattern
-        for file_path_raw in file_paths:
 
-            # Split the input to get the path and potential line range selector
-            parts = re.match(r"(.*?)\[(.*?)\]?", file_path_raw)
-            if parts:
-                file_path = parts.group(1)
-                range_str = parts.group(2)
-            else:
-                file_path = file_path_raw
-                range_str = None
-
-            # Parse the line range selector if it exists
-            line_ranges = None
-            if range_str:
-                line_ranges = []
-                for range_part in range_str.split(','):
-                    try:
-                        start, end = map(int, range_part.split(':'))
-                        line_ranges.append(slice(start, end))
-                    except ValueError:
-                        try:
-                            line_ranges.append(int(range_part))
-                        except ValueError:
-                            print(f"Invalid range specifier: {range_part}")
+        for file_path in file_paths:
+            # Parse the file path and extract line ranges
+            file_path, line_ranges = parse_line_range(file_path)
 
             if not os.path.isfile(file_path):
                 raise FileNotFoundError(f"File {file_path} not found")
-            with open(file_path, "r") as code_file:
-                code = code_file.read()
-                if not code.endswith("\n"):
-                    code += "\n"
+
+            # Read the file with the specified line ranges
+            code = read_file_with_ranges(file_path, line_ranges)
+
+            if not code.endswith("\n"):
+                code += "\n"
+
             token_count = len(enc.encode(code))
-            output.append(
-                default_formatter(
-                    TextFile(path=file_path, text=code, token_count=token_count, line_ranges=line_ranges),
-                    path_location=path_location
-                    )
-                )
+            output.append(default_formatter(TextFile(path=file_path, text=code, token_count=token_count), path_location=path_location))
 
     # Join all formatted outputs and remove trailing newlines
     return ("".join(output)).rstrip()
@@ -306,10 +305,8 @@ def dir2md(
 @click.option('--output-dir', default=".", help='The directory to output the files to.')
 @click.option('--yes', is_flag=True, help='Automatically answer yes to all prompts.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option(
-    '--path-location', default="below", type=click.Choice(['above', 'below']),
-    help='The location of the file path relative to the code block.'
-    )
+@click.option('--path-location', default="below", type=click.Choice(['above', 'below']),
+              help='The location of the file path relative to the code block.')
 @click.option('--paste', is_flag=True, help='Read the markdown text from the clipboard.')
 @click.option('--path', type=click.Path(exists=True), help='Read the markdown text from a file.')
 @click.option('--ignore-missing-path', is_flag=True, default=False, help='Ignore code blocks without a specified path.')
@@ -431,19 +428,21 @@ def test_default_parser():
     assert list(default_parser(md).code_blocks) == expected
 
 
-@pytest.mark.parametrize(
-    "text_file, expected", [
-        (TextFile(text="x = 1\n", path="out.py"), "out.py\n\n```python\nx = 1\n```\n\n"),
-        (TextFile(text="let x = 1;\n", path="out.rs"), "out.rs\n\n```rust\nlet x = 1;\n```\n\n"),
-    ]
-    )
+@pytest.mark.parametrize("text_file, expected", [
+    (TextFile(text="x = 1\n", path="out.py"), "out.py\n\n```python\nx = 1\n```\n\n"),
+    (TextFile(text="let x = 1;\n", path="out.rs"), "out.rs\n\n```rust\nlet x = 1;\n```\n\n"),
+])
 def test_default_formatter(text_file: TextFile, expected: str) -> None:
     assert default_formatter(text_file, path_location="below") == expected
 
 
-def test_with_test_input_file():
-    test_input = open("test_input", "r").read()
-    print(md2dir(test_input, output_dir="test_output", yes=True))
+def test_parse_line_range():
+    assert parse_line_range("a.py[:2]") == ("a.py", [slice(None, 2)])
+    assert parse_line_range("b.py[-5:]") == ("b.py", [slice(-5, None)])
+    assert parse_line_range("c.py[0:10]") == ("c.py", [slice(0, 10)])
+    assert parse_line_range("d.py[0, 2, 4, 6:-8, -5, -3, -1]") == (
+        "d.py", [0, 2, 4, slice(6, -8), -5, -3, -1]
+    )
 
 
 if __name__ == "__main__":

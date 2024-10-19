@@ -7,14 +7,13 @@ import re
 import textwrap
 import uuid
 from dataclasses import dataclass
-from typing import Literal, List, Union
+from typing import Literal, List, Tuple, Union, Optional
 from typing import NamedTuple
 
 import click
 import pyperclip
 import pytest
 import tiktoken
-import ast
 
 # TODO: get rid of the handling of unclosed blocks. It's not worth the added complexity. Newer models will have much larger output limits or will be able to continue generating incomplete messages (or 'prefill', as Anthropic calls it).
 
@@ -26,7 +25,6 @@ RESET = "\033[0m"
 
 enc = tiktoken.encoding_for_model("gpt-4o")
 token_fudge_factor = 1.5
-
 
 class TextFile(NamedTuple):
     text: str
@@ -41,21 +39,36 @@ def default_formatter(text_file: TextFile, path_location: Literal["above", "belo
     if path_location == "above":
         # Yield the relative path to the file as a comment
         r += f"{text_file.path}\n\n"
-    # Yield the code block
-    # Decide how many ticks to use
-    ticks = "```"
-    while re.search(rf"\n\s*{ticks}", text_file.text):
-        ticks += "`"
-    language = infer_language(text_file.path)
-    # Add the custom attribute for the token count
-    r += f"{ticks}{language} tokens={int(text_file.token_count * token_fudge_factor)}\n"
-    if path_location == "below":
+        # Yield the code block
+        # Decide how many ticks to use
+        ticks = "```"
+        while re.search(rf"\n\s*{ticks}", text_file.text):
+            ticks += "`"
+        language = infer_language(text_file.path)
+        # Add the custom attribute for the token count
+        r += f"{ticks}{language} tokens={int(text_file.token_count * token_fudge_factor)}\n"
+        if path_location == "below":
+            comment_prefix = comment_prefix_for_language(language)
+            l = f"{comment_prefix} {text_file.path}\n"
+            if not text_file.text.startswith(l):
+                r += l
+        r += text_file.text
+        r += f"{ticks}\n\n"
+    else:
+        # For path_location == "below"
+        # Yield the code block
+        ticks = "```"
+        while re.search(rf"\n\s*{ticks}", text_file.text):
+            ticks += "`"
+        language = infer_language(text_file.path)
+        # Add the custom attribute for the token count
+        r += f"{ticks}{language} tokens={int(text_file.token_count * token_fudge_factor)}\n"
+        r += text_file.text
         comment_prefix = comment_prefix_for_language(language)
         l = f"{comment_prefix} {text_file.path}\n"
-        if not text_file.text.startswith(l):
+        if not text_file.text.endswith(l):
             r += l
-    r += text_file.text
-    r += f"{ticks}\n\n"
+        r += f"{ticks}\n\n"
     return r
 
 
@@ -85,9 +98,8 @@ class ParseResult:
     last_code_block_is_unclosed: bool
 
 
-def default_parser(
-        s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "below",
-        ignore_missing_path: bool = False) -> ParseResult:
+def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "below",
+    ignore_missing_path: bool = False) -> ParseResult:
     def _find_path_above(text: str) -> str:
         lines = text.splitlines()
         if lines and path_replacement_field.format(lines[-1].strip()):
@@ -110,23 +122,23 @@ def default_parser(
 
     def _format_error_message(start_line: int, code_block: str, path_replacement_field: str) -> str:
         # TODO: fix this
-        #  - don't hardcode the language name
-        #  - pass this function the full lines and let it choose what to show
+        # - don't hardcode the language name
+        # - pass this function the full lines and let it choose what to show
         error_message = f"{RED}error: Could not find a path for code block{RESET}\n"
         error_message += f"Error at line {start_line + 1}:6\n"
-        error_message += f"     |\n"
-        error_message += f"{start_line + 1: >3}  | {code_block.splitlines()[0]}\n"
-        error_message += f"     | {RED}^^^^^{RESET} {YELLOW}Expected a commented path above or below the code block:{RESET}\n\n"
+        error_message += f" |\n"
+        error_message += f"{start_line + 1: >3} | {code_block.splitlines()[0]}\n"
+        error_message += f" | {RED}^^^^^{RESET} {YELLOW}Expected a commented path above or below the code block:{RESET}\n\n"
 
-        error_message += f"     | {YELLOW}Option 1: Add a commented path above the code block start{RESET}\n"
-        error_message += f"     |\n"
+        error_message += f" | {YELLOW}Option 1: Add a commented path above the code block start{RESET}\n"
+        error_message += f" |\n"
         error_message += f"{GREEN}+{RESET} {start_line: >2} | {path_replacement_field} {YELLOW}<--- Add a path here{RESET}\n"
         error_message += f" {start_line + 1: >3} | ```python\n"
         error_message += f" {start_line + 2: >3} | {code_block.splitlines()[0]}\n"
         error_message += f" {start_line + 3: >3} | ```\n\n"
 
-        error_message += f"     | {YELLOW}Option 2: Add a commented path below the code block start{RESET}\n"
-        error_message += f"     |\n"
+        error_message += f" | {YELLOW}Option 2: Add a commented path below the code block start{RESET}\n"
+        error_message += f" |\n"
         error_message += f" {start_line: >3} | ```python\n"
         error_message += f"{GREEN}+{RESET} {start_line + 1: >2} | # {path_replacement_field} {YELLOW}<--- Add a path here as a comment{RESET}\n"
         error_message += f" {start_line + 2: >3} | {code_block.splitlines()[0]}\n"
@@ -176,11 +188,11 @@ def default_parser(
                 missing_path_count += 1
                 if not ignore_missing_path:
                     raise ValueError(_format_error_message(start, code, path_replacement_field))
-            else:
-                if i == len(lines) and not lines[i - 1].startswith(ticks):
-                    last_code_block_is_unclosed = True
-                token_count = len(enc.encode(code))
-                code_blocks.append(TextFile(text=code, path=path, token_count=token_count))
+                else:
+                    if i == len(lines) and not lines[i - 1].startswith(ticks):
+                        last_code_block_is_unclosed = True
+            token_count = len(enc.encode(code))
+            code_blocks.append(TextFile(text=code, path=path, token_count=token_count))
         else:
             i += 1
 
@@ -190,131 +202,159 @@ def default_parser(
     return ParseResult(code_blocks, last_code_block_is_unclosed)
 
 
-def parse_line_range(range_str: str) -> Union[slice, List[Union[int, slice]]]:
+def parse_file_arg(arg: str) -> Tuple[str, Optional[str]]:
+    '''Parses a file argument 'filename[linespec]' and returns filename and line specification'''
+    if '[' in arg:
+        pos = arg.find('[')
+        filename = arg[:pos]
+        line_spec = arg[pos:]
+        return filename, line_spec
+    else:
+        return arg, None
+
+def parse_line_specification(line_spec: str):
+    line_spec = line_spec.strip()
+    if line_spec.startswith('[[') and line_spec.endswith(']]'):
+        # Remove outer square brackets
+        line_spec = line_spec[1:-1]
+    elif line_spec.startswith('[') and line_spec.endswith(']'):
+        line_spec = line_spec[1:-1]
+
+    # Replace slices like '6:-8' with 'slice(6, -8)'
+    # Use regular expression to find slices
+    # Slice pattern: optional '-' followed by digits, ':', optional '-' followed by digits
+    import re
+
+    slice_pattern = r'(-?\d*):(-?\d*)'
+
+    # Wrap slice expressions in 'slice( , )'
+
+    def replace_slice(match):
+        start, end = match.groups()
+        start = start.strip()
+        end = end.strip()
+        if start == '':
+            start_str = 'None'
+        else:
+            start_str = start
+        if end == '':
+            end_str = 'None'
+        else:
+            end_str = end
+        return f'slice({start_str}, {end_str})'
+
+    line_spec = re.sub(slice_pattern, replace_slice, line_spec)
+    # Now we have a string that contains indices and slices in Python syntax
+    # E.g., '0, 2, 4, slice(6, -8), -5, -3, -1'
+
+    # Now we can use ast.literal_eval
+    import ast
     try:
-        return ast.literal_eval(range_str)
-    except:
-        pass
-
-    if range_str.startswith('[') and range_str.endswith(']'):
-        # Handle the case of multiple ranges
-        ranges = range_str[1:-1].split(',')
-        result = []
-        for r in ranges:
-            r = r.strip()
-            if ':' in r:
-                start, end = r.split(':')
-                start = int(start) if start else None
-                end = int(end) if end else None
-                result.append(slice(start, end))
-            else:
-                result.append(int(r))
-        return result
-    elif ':' in range_str:
-        start, end = range_str.split(':')
-        start = int(start) if start else None
-        end = int(end) if end else None
-        return slice(start, end)
-    else:
-        return slice(None)
+        indices_or_slices = ast.literal_eval(f'[{line_spec}]')
+    except Exception as e:
+        raise ValueError(f"Invalid line specification: {line_spec}")
+    return indices_or_slices
 
 
-def apply_line_range(text: str, line_range: Union[slice, List[Union[int, slice]]]) -> str:
-    lines = text.splitlines()
-
-    if isinstance(line_range, slice):
-        return '\n'.join(lines[line_range])
-    elif isinstance(line_range, list):
-        result = []
-        for r in line_range:
-            if isinstance(r, int):
-                result.append(lines[r])
-            elif isinstance(r, slice):
-                result.extend(lines[r])
-        return '\n'.join(result)
-    else:
-        return text
-
-
-@click.command(name="dir2md")
-@click.argument('files', nargs=-1, required=True)
-@click.option('--no-glob', is_flag=True, default=True, help='Disable globbing for file arguments.')
-@click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option(
-    '--path-location', default="below", type=click.Choice(['above', 'below']),
-    help='The location of the file path relative to the code block.'
-    )
 def dir2md_cli(
-        files: list[str] | str, no_glob: bool,
-        path_replacement_field: str, path_location: Literal["above", "below"]
+    files: List[str], no_glob: bool,
+    path_replacement_field: str, path_location: Literal["above", "below"]
 ) -> None:
     """Converts a directory of files to a markdown document."""
     if isinstance(files, str):
         files = [files]
 
     output = []
-    for file_or_pattern in files:
-        file_path, _, range_str = file_or_pattern.partition('[')
-        range_str = range_str.rstrip(']')
-
+    for file_arg in files:
+        filename, line_specification = parse_file_arg(file_arg)
         if not no_glob:
-            file_paths = glob.glob(file_path)
+            file_paths = glob.glob(filename)
         else:
-            file_paths = [file_path]
-
+            file_paths = [filename]
         for file_path in file_paths:
             if not os.path.isfile(file_path):
                 raise FileNotFoundError(f"File {file_path} not found")
             with open(file_path, "r") as code_file:
-                code = code_file.read()
+                lines = code_file.readlines()
+                if line_specification:
+                    indices_or_slices = parse_line_specification(line_specification)
+                    selected_lines = []
+                    for idx in indices_or_slices:
+                        if isinstance(idx, slice):
+                            selected_lines.extend(lines[idx])
+                        else:
+                            try:
+                                selected_lines.append(lines[idx])
+                            except IndexError:
+                                continue
+                    code = ''.join(selected_lines)
+                else:
+                    code = ''.join(lines)
                 if not code.endswith("\n"):
                     code += "\n"
-
-            if range_str:
-                line_range = parse_line_range(range_str)
-                code = apply_line_range(code, line_range)
-
-            token_count = len(enc.encode(code))
-            output.append(default_formatter(TextFile(path=file_path, text=code, token_count=token_count), path_location=path_location))
-
+                token_count = len(enc.encode(code))
+                output.append(default_formatter(TextFile(path=file_path, text=code, token_count=token_count), path_location=path_location))
     # Join all formatted outputs and remove trailing newlines
     click.echo(("".join(output)).rstrip())
 
 
+@click.command(name="dir2md")
+@click.argument('files', nargs=-1, required=True)
+@click.option('--no-glob', is_flag=True, default=True, help='Disable globbing for file arguments.')
+@click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
+@click.option('--path-location', default="below", type=click.Choice(['above', 'below']),
+    help='The location of the file path relative to the code block.')
+def dir2md_command(
+    files: list[str], no_glob: bool,
+    path_replacement_field: str, path_location: Literal["above", "below"]
+) -> None:
+    """Converts a directory of files to a markdown document."""
+    dir2md_cli(
+        files=files,
+        no_glob=no_glob,
+        path_replacement_field=path_replacement_field,
+        path_location=path_location
+    )
+
+
 def dir2md(
-        files: list[str] | str, no_glob: bool = False,
-        path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "below"
+    files: List[str], no_glob: bool = False,
+    path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "below"
 ) -> str:
     """Converts a directory of files to a markdown document."""
     if isinstance(files, str):
         files = [files]
 
     output = []
-    for file_or_pattern in files:
-        file_path, _, range_str = file_or_pattern.partition('[')
-        range_str = range_str.rstrip(']')
-
+    for file_arg in files:
+        filename, line_specification = parse_file_arg(file_arg)
         if not no_glob:
-            file_paths = glob.glob(file_path)
-        elif isinstance(file_path, str):
-            file_paths = [file_path]
+            file_paths = glob.glob(filename)
         else:
-            file_paths = file_path
-
+            file_paths = [filename]
         for file_path in file_paths:
             if not os.path.isfile(file_path):
                 raise FileNotFoundError(f"File {file_path} not found")
             with open(file_path, "r") as code_file:
-                code = code_file.read()
+                lines = code_file.readlines()
+                if line_specification:
+                    indices_or_slices = parse_line_specification(line_specification)
+                    selected_lines = []
+                    for idx in indices_or_slices:
+                        if isinstance(idx, slice):
+                            selected_lines.extend(lines[idx])
+                        else:
+                            try:
+                                selected_lines.append(lines[idx])
+                            except IndexError:
+                                continue
+                    code = ''.join(selected_lines)
+                else:
+                    code = ''.join(lines)
                 if not code.endswith("\n"):
                     code += "\n"
-
-            if range_str:
-                line_range = parse_line_range(range_str)
-                code = apply_line_range(code, line_range)
-
-            token_count = len(enc.encode(code))
-            output.append(default_formatter(TextFile(path=file_path, text=code, token_count=token_count), path_location=path_location))
+                token_count = len(enc.encode(code))
+                output.append(default_formatter(TextFile(path=file_path, text=code, token_count=token_count), path_location=path_location))
 
     # Join all formatted outputs and remove trailing newlines
     return ("".join(output)).rstrip()
@@ -324,16 +364,14 @@ def dir2md(
 @click.option('--output-dir', default=".", help='The directory to output the files to.')
 @click.option('--yes', is_flag=True, help='Automatically answer yes to all prompts.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option(
-    '--path-location', default="below", type=click.Choice(['above', 'below']),
-    help='The location of the file path relative to the code block.'
-    )
+@click.option('--path-location', default="below", type=click.Choice(['above', 'below']),
+    help='The location of the file path relative to the code block.')
 @click.option('--paste', is_flag=True, help='Read the markdown text from the clipboard.')
 @click.option('--path', type=click.Path(exists=True), help='Read the markdown text from a file.')
 @click.option('--ignore-missing-path', is_flag=True, default=False, help='Ignore code blocks without a specified path.')
 def md2dir_cli(
-        output_dir: str, yes: bool, path_replacement_field: str,
-        path_location: Literal["above", "below"], paste: bool, path: str, ignore_missing_path: bool
+    output_dir: str, yes: bool, path_replacement_field: str,
+    path_location: Literal["above", "below"], paste: bool, path: str, ignore_missing_path: bool
 ) -> None:
     """Converts a markdown document to a directory of files."""
     if paste and path:
@@ -358,9 +396,9 @@ def md2dir_cli(
 
 
 def md2dir(
-        text: str, output_dir: str, yes: bool = False, path_replacement_field: str = "{}",
-        path_location: Literal["above", "below"] = "below", ignore_missing_path: bool = False,
-        on_unclosed: Literal["proceed", "omit_last_line", "skip", "error"] = "omit_last_line"
+    text: str, output_dir: str, yes: bool = False, path_replacement_field: str = "{}",
+    path_location: Literal["above", "below"] = "below", ignore_missing_path: bool = False,
+    on_unclosed: Literal["proceed", "omit_last_line", "skip", "error"] = "omit_last_line"
 ) -> ParseResult:
     """Converts a markdown document to a directory of files."""
     parse_result = default_parser(
@@ -393,9 +431,9 @@ def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
         for filename in filenames:
             directory = os.path.dirname(filename)
             if (
-                    directory
-                    and not os.path.exists(directory)
-                    and directory not in new_directories
+                directory
+                and not os.path.exists(directory)
+                and directory not in new_directories
             ):
                 new_directories.append(directory)
         new_files = [
@@ -407,15 +445,15 @@ def save_dir(files: list[TextFile], output_dir: str, yes: bool = False) -> None:
         if new_directories:
             click.echo("The following directories will be created:")
             for directory in new_directories:
-                click.echo(f"  {directory!r}")
+                click.echo(f" {directory!r}")
         if new_files:
             click.echo("The following files will be created:")
             for file in new_files:
-                click.echo(f"  {pathlib.Path(output_dir, file)}")
+                click.echo(f" {pathlib.Path(output_dir, file)}")
         if existing_files:
             click.echo("The following files will be overwritten:")
             for file in existing_files:
-                click.echo(f"  {pathlib.Path(output_dir, file)}")
+                click.echo(f" {pathlib.Path(output_dir, file)}")
         click.echo("Continue? (y/n)")
         if input() != "y":
             click.echo("Aborted.")
@@ -449,14 +487,26 @@ def test_default_parser():
     assert list(default_parser(md).code_blocks) == expected
 
 
-@pytest.mark.parametrize(
-    "text_file, expected", [
-        (TextFile(text="x = 1\n", path="out.py"), "out.py\n\n```python\nx = 1\n```\n\n"),
-        (TextFile(text="let x = 1;\n", path="out.rs"), "out.rs\n\n```rust\nlet x = 1;\n```\n\n"),
-    ]
-    )
+@pytest.mark.parametrize("text_file, expected", [
+    (TextFile(text="x = 1\n", path="out.py"), "out.py\n\n```python\nx = 1\n```\n\n"),
+    (TextFile(text="let x = 1;\n", path="out.rs"), "out.rs\n\n```rust\nlet x = 1;\n```\n\n"),
+    ])
 def test_default_formatter(text_file: TextFile, expected: str) -> None:
     assert default_formatter(text_file, path_location="below") == expected
+
+
+def test_parse_file_arg():
+    assert parse_file_arg('a.py[:2]') == ('a.py', '[:2]')
+    assert parse_file_arg('b.py[-5:]') == ('b.py', '[-5:]')
+    assert parse_file_arg('c.py[0:10]') == ('c.py', '[0:10]')
+    assert parse_file_arg('d.py [[0, 2, 4, 6:-8, -5, -3, -1]]') == ('d.py ', '[[0, 2, 4, 6:-8, -5, -3, -1]]')
+
+
+def test_parse_line_specification():
+    assert parse_line_specification('[:2]') == [slice(None, 2)]
+    assert parse_line_specification('[-5:]') == [slice(-5, None)]
+    assert parse_line_specification('[0:10]') == [slice(0, 10)]
+    assert parse_line_specification('[[0, 2, 4, 6:-8, -5, -3, -1]]') == [0, 2, 4, slice(6, -8), -5, -3, -1]
 
 
 def test_with_test_input_file():
@@ -466,6 +516,6 @@ def test_with_test_input_file():
 
 if __name__ == "__main__":
     cli = click.Group()
-    cli.add_command(dir2md_cli)
+    cli.add_command(dir2md_command)
     cli.add_command(md2dir_cli)
     cli()

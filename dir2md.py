@@ -26,12 +26,14 @@ RESET = "\033[0m"
 enc = tiktoken.encoding_for_model("gpt-4o")
 token_fudge_factor = 1.5
 
+
 class TextFile(NamedTuple):
     text: str
     path: str
     start: int = 0
     end: int = -1
     token_count: int = 0
+    line_ranges: list[slice | int] | None = None
 
 
 def default_formatter(text_file: TextFile, path_location: Literal["above", "below"]) -> str:
@@ -52,7 +54,24 @@ def default_formatter(text_file: TextFile, path_location: Literal["above", "belo
         l = f"{comment_prefix} {text_file.path}\n"
         if not text_file.text.startswith(l):
             r += l
-    r += text_file.text
+
+    # Apply line ranges if specified
+    if text_file.line_ranges:
+        lines = text_file.text.splitlines()
+        selected_lines = []
+        for rng in text_file.line_ranges:
+            if isinstance(rng, slice):
+                selected_lines.extend(lines[rng])
+            elif isinstance(rng, int):
+                try:
+                    selected_lines.append(lines[rng])
+                except IndexError:
+                    pass  # Ignore out of bounds indexes
+            else:
+                raise TypeError("Line ranges must be slices or integers.")
+        r += "\n".join(selected_lines)
+    else:
+        r += text_file.text
     r += f"{ticks}\n\n"
     return r
 
@@ -83,8 +102,9 @@ class ParseResult:
     last_code_block_is_unclosed: bool
 
 
-def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "below",
-                   ignore_missing_path: bool = False) -> ParseResult:
+def default_parser(
+        s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "below",
+        ignore_missing_path: bool = False) -> ParseResult:
     def _find_path_above(text: str) -> str:
         lines = text.splitlines()
         if lines and path_replacement_field.format(lines[-1].strip()):
@@ -130,7 +150,6 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
         error_message += f" {start_line + 3: >3} | ```\n"
 
         return error_message
-
 
     code_blocks = []
     lines = s.splitlines()
@@ -192,8 +211,10 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
 @click.argument('files', nargs=-1, required=True)
 @click.option('--no-glob', is_flag=True, default=True, help='Disable globbing for file arguments.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option('--path-location', default="below", type=click.Choice(['above', 'below']),
-              help='The location of the file path relative to the code block.')
+@click.option(
+    '--path-location', default="below", type=click.Choice(['above', 'below']),
+    help='The location of the file path relative to the code block.'
+    )
 def dir2md_cli(
         files: list[str] | str, no_glob: bool,
         path_replacement_field: str, path_location: Literal["above", "below"]
@@ -238,7 +259,31 @@ def dir2md(
             file_paths = [file_or_pattern]
         else:
             file_paths = file_or_pattern
-        for file_path in file_paths:
+        for file_path_raw in file_paths:
+
+            # Split the input to get the path and potential line range selector
+            parts = re.match(r"(.*?)\[(.*?)\]?", file_path_raw)
+            if parts:
+                file_path = parts.group(1)
+                range_str = parts.group(2)
+            else:
+                file_path = file_path_raw
+                range_str = None
+
+            # Parse the line range selector if it exists
+            line_ranges = None
+            if range_str:
+                line_ranges = []
+                for range_part in range_str.split(','):
+                    try:
+                        start, end = map(int, range_part.split(':'))
+                        line_ranges.append(slice(start, end))
+                    except ValueError:
+                        try:
+                            line_ranges.append(int(range_part))
+                        except ValueError:
+                            print(f"Invalid range specifier: {range_part}")
+
             if not os.path.isfile(file_path):
                 raise FileNotFoundError(f"File {file_path} not found")
             with open(file_path, "r") as code_file:
@@ -246,7 +291,12 @@ def dir2md(
                 if not code.endswith("\n"):
                     code += "\n"
             token_count = len(enc.encode(code))
-            output.append(default_formatter(TextFile(path=file_path, text=code, token_count=token_count), path_location=path_location))
+            output.append(
+                default_formatter(
+                    TextFile(path=file_path, text=code, token_count=token_count, line_ranges=line_ranges),
+                    path_location=path_location
+                    )
+                )
 
     # Join all formatted outputs and remove trailing newlines
     return ("".join(output)).rstrip()
@@ -256,8 +306,10 @@ def dir2md(
 @click.option('--output-dir', default=".", help='The directory to output the files to.')
 @click.option('--yes', is_flag=True, help='Automatically answer yes to all prompts.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option('--path-location', default="below", type=click.Choice(['above', 'below']),
-              help='The location of the file path relative to the code block.')
+@click.option(
+    '--path-location', default="below", type=click.Choice(['above', 'below']),
+    help='The location of the file path relative to the code block.'
+    )
 @click.option('--paste', is_flag=True, help='Read the markdown text from the clipboard.')
 @click.option('--path', type=click.Path(exists=True), help='Read the markdown text from a file.')
 @click.option('--ignore-missing-path', is_flag=True, default=False, help='Ignore code blocks without a specified path.')
@@ -379,10 +431,12 @@ def test_default_parser():
     assert list(default_parser(md).code_blocks) == expected
 
 
-@pytest.mark.parametrize("text_file, expected", [
-    (TextFile(text="x = 1\n", path="out.py"), "out.py\n\n```python\nx = 1\n```\n\n"),
-    (TextFile(text="let x = 1;\n", path="out.rs"), "out.rs\n\n```rust\nlet x = 1;\n```\n\n"),
-])
+@pytest.mark.parametrize(
+    "text_file, expected", [
+        (TextFile(text="x = 1\n", path="out.py"), "out.py\n\n```python\nx = 1\n```\n\n"),
+        (TextFile(text="let x = 1;\n", path="out.rs"), "out.rs\n\n```rust\nlet x = 1;\n```\n\n"),
+    ]
+    )
 def test_default_formatter(text_file: TextFile, expected: str) -> None:
     assert default_formatter(text_file, path_location="below") == expected
 

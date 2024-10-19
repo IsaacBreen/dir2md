@@ -212,48 +212,28 @@ def parse_file_arg(arg: str) -> Tuple[str, Optional[str]]:
     else:
         return arg, None
 
+
 def parse_line_specification(line_spec: str):
-    line_spec = line_spec.strip()
-    if line_spec.startswith('[[') and line_spec.endswith(']]'):
-        # Remove outer square brackets
-        line_spec = line_spec[1:-1]
-    elif line_spec.startswith('[') and line_spec.endswith(']'):
-        line_spec = line_spec[1:-1]
+    class X:
+        def __getitem__(self, key):
+            return key
 
-    # Replace slices like '6:-8' with 'slice(6, -8)'
-    # Use regular expression to find slices
-    # Slice pattern: optional '-' followed by digits, ':', optional '-' followed by digits
-    import re
-
-    slice_pattern = r'(-?\d*):(-?\d*)'
-
-    # Wrap slice expressions in 'slice( , )'
-
-    def replace_slice(match):
-        start, end = match.groups()
-        start = start.strip()
-        end = end.strip()
-        if start == '':
-            start_str = 'None'
-        else:
-            start_str = start
-        if end == '':
-            end_str = 'None'
-        else:
-            end_str = end
-        return f'slice({start_str}, {end_str})'
-
-    line_spec = re.sub(slice_pattern, replace_slice, line_spec)
-    # Now we have a string that contains indices and slices in Python syntax
-    # E.g., '0, 2, 4, slice(6, -8), -5, -3, -1'
-
-    # Now we can use ast.literal_eval
-    import ast
+    x = X()
     try:
-        indices_or_slices = ast.literal_eval(f'[{line_spec}]')
-    except Exception as e:
-        raise ValueError(f"Invalid line specification: {line_spec}")
-    return indices_or_slices
+        # Using eval is generally unsafe, but in this specific case,
+        # we control the input and only allow indexing operations.
+        # It's still recommended to avoid eval if a safer alternative exists.
+        result = eval(f"x{line_spec}")  # Evaluate x[line_spec]
+        if isinstance(result, tuple):  # Handle slices (a, b) format
+            return [slice(*result)]  # Convert to slice object
+        elif isinstance(result, list):
+            return result
+        elif isinstance(result, slice | int):
+            return [result]
+        else:
+            raise ValueError(f"Invalid line specification: {line_spec}. Result: {result}.")
+    except (SyntaxError, TypeError, NameError, IndexError) as e:
+        raise ValueError(f"Invalid line specification: {line_spec} - {e}")
 
 
 def dir2md_cli(

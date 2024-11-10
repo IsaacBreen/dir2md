@@ -34,10 +34,10 @@ class TextFile(NamedTuple):
     token_count: int = 0
 
 
-def default_formatter(text_file: TextFile, path_location: Literal["above", "below"]) -> str:
+def default_formatter(text_file: TextFile, path_location: Literal["above", "below"], include_token_count: bool = False) -> str:
     r = ""
     if path_location == "above":
-        # Yield the relative path to the file as a comment
+        # Yield the relative path to the file
         r += f"{text_file.path}\n\n"
         # Yield the code block
         # Decide how many ticks to use
@@ -45,13 +45,11 @@ def default_formatter(text_file: TextFile, path_location: Literal["above", "belo
         while re.search(rf"\n\s*{ticks}", text_file.text):
             ticks += "`"
         language = infer_language(text_file.path)
-        # Add the custom attribute for the token count
-        r += f"{ticks}{language} tokens={int(text_file.token_count * token_fudge_factor)}\n"
-        if path_location == "below":
-            comment_prefix = comment_prefix_for_language(language)
-            l = f"{comment_prefix} {text_file.path}\n"
-            if not text_file.text.startswith(l):
-                r += l
+        if include_token_count:
+            # Add the custom attribute for the token count
+            r += f"{ticks}{language} tokens={int(text_file.token_count * token_fudge_factor)}\n"
+        else:
+            r += f"{ticks}{language}\n"
         r += text_file.text
         r += f"{ticks}\n\n"
     else:
@@ -62,12 +60,13 @@ def default_formatter(text_file: TextFile, path_location: Literal["above", "belo
             ticks += "`"
         language = infer_language(text_file.path)
         # Add the custom attribute for the token count
-        r += f"{ticks}{language} tokens={int(text_file.token_count * token_fudge_factor)}\n"
-        r += text_file.text
+        if include_token_count:
+            r += f"{ticks}{language} tokens={int(text_file.token_count * token_fudge_factor)}\n"
+        else:
+            r += f"{ticks}{language}\n"
         comment_prefix = comment_prefix_for_language(language)
-        l = f"{comment_prefix} {text_file.path}\n"
-        if not text_file.text.endswith(l):
-            r += l
+        r += f"{comment_prefix} {text_file.path}\n"
+        r += text_file.text
         r += f"{ticks}\n\n"
     return r
 

@@ -190,7 +190,7 @@ def default_parser(s: str, path_replacement_field: str = "{}", path_location: Li
                 else:
                     if i == len(lines) and not lines[i - 1].startswith(ticks):
                         last_code_block_is_unclosed = True
-            token_count = len(enc.encode(code))
+            token_count = len(enc.encode(code, disallowed_special=()))
             code_blocks.append(TextFile(text=code, path=path, token_count=token_count))
         else:
             i += 1

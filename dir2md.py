@@ -271,7 +271,7 @@ def dir2md_cli(
                     code = ''.join(lines)
                 if not code.endswith("\n"):
                     code += "\n"
-                token_count = len(enc.encode(code))
+                token_count = len(enc.encode(code, disallowed_special=()))
                 output.append(default_formatter(TextFile(path=file_path, text=code, token_count=token_count), path_location=path_location))
     # Join all formatted outputs and remove trailing newlines
     click.echo(("".join(output)).rstrip())
@@ -332,7 +332,7 @@ def dir2md(
                     code = ''.join(lines)
                 if not code.endswith("\n"):
                     code += "\n"
-                token_count = len(enc.encode(code))
+                token_count = len(enc.encode(code, disallowed_special=()))
                 output.append(default_formatter(TextFile(path=file_path, text=code, token_count=token_count), path_location=path_location))
 
     # Join all formatted outputs and remove trailing newlines
@@ -392,7 +392,7 @@ def md2dir(
                 pass
             case "omit_last_line":
                 parse_result.code_blocks[-1].text = "\n".join(parse_result.code_blocks[-1].text.splitlines()[:-1])
-                parse_result.code_blocks[-1].token_count = len(enc.encode(parse_result.code_blocks[-1].text))
+                parse_result.code_blocks[-1].token_count = len(enc.encode(parse_result.code_blocks[-1].text, disallowed_special=()))
             case "skip":
                 parse_result.code_blocks.pop()
             case "error":

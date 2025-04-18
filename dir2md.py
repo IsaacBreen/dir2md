@@ -97,7 +97,7 @@ class ParseResult:
     last_code_block_is_unclosed: bool
 
 
-def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "below",
+def default_parser(s: str, path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above",
     ignore_missing_path: bool = False) -> ParseResult:
     def _find_path_above(text: str) -> str:
         lines = text.splitlines()
@@ -281,7 +281,7 @@ def dir2md_cli(
 @click.argument('files', nargs=-1, required=True)
 @click.option('--no-glob', is_flag=True, default=True, help='Disable globbing for file arguments.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option('--path-location', default="below", type=click.Choice(['above', 'below']),
+@click.option('--path-location', default="above", type=click.Choice(['above', 'below']),
     help='The location of the file path relative to the code block.')
 def dir2md_command(
     files: list[str], no_glob: bool,
@@ -298,7 +298,7 @@ def dir2md_command(
 
 def dir2md(
     files: List[str], no_glob: bool = False,
-    path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "below"
+    path_replacement_field: str = "{}", path_location: Literal["above", "below"] = "above"
 ) -> str:
     """Converts a directory of files to a markdown document."""
     if isinstance(files, str):
@@ -343,7 +343,7 @@ def dir2md(
 @click.option('--output-dir', default=".", help='The directory to output the files to.')
 @click.option('--yes', is_flag=True, help='Automatically answer yes to all prompts.')
 @click.option('--path-replacement-field', default="{}", help='The pattern to use for identifying the file path.')
-@click.option('--path-location', default="below", type=click.Choice(['above', 'below']),
+@click.option('--path-location', default="above", type=click.Choice(['above', 'below']),
     help='The location of the file path relative to the code block.')
 @click.option('--paste', is_flag=True, help='Read the markdown text from the clipboard.')
 @click.option('--path', type=click.Path(exists=True), help='Read the markdown text from a file.')
@@ -376,7 +376,7 @@ def md2dir_cli(
 
 def md2dir(
     text: str, output_dir: str, yes: bool = False, path_replacement_field: str = "{}",
-    path_location: Literal["above", "below"] = "below", ignore_missing_path: bool = False,
+    path_location: Literal["above", "below"] = "above", ignore_missing_path: bool = False,
     on_unclosed: Literal["proceed", "omit_last_line", "skip", "error"] = "omit_last_line"
 ) -> ParseResult:
     """Converts a markdown document to a directory of files."""
@@ -471,7 +471,7 @@ def test_default_parser():
     (TextFile(text="let x = 1;\n", path="out.rs"), "out.rs\n\n```rust\nlet x = 1;\n```\n\n"),
     ])
 def test_default_formatter(text_file: TextFile, expected: str) -> None:
-    assert default_formatter(text_file, path_location="below") == expected
+    assert default_formatter(text_file, path_location="above") == expected
 
 
 def test_parse_file_arg():

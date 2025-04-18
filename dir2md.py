@@ -38,7 +38,7 @@ def default_formatter(text_file: TextFile, path_location: Literal["above", "belo
     r = ""
     if path_location == "above":
         # Yield the relative path to the file
-        r += f"{text_file.path}\n\n"
+        r += f"{text_file.path}\n"
         # Yield the code block
         # Decide how many ticks to use
         ticks = "```"
